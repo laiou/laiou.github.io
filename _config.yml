@@ -173,5 +173,5 @@ footer:
 
 # 文章搜索
 search:
-  enable: true
+  enable: false
   placeholder: 
