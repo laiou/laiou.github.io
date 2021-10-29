@@ -1,0 +1,2266 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+  <head>
+  <meta charset="utf-8">
+  <meta name="author" content="zchengsite, 1451426471@qq.com" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  
+  
+  <title>量化的原理和相关实现 | Blog</title>
+
+  
+    <link rel="apple-touch-icon" href="/images/favicon.png">
+    <link rel="icon" href="/images/favicon.png">
+  
+
+  <!-- Raleway-Font -->
+  <link href="https://fonts.googleapis.com/css?family=Raleway&display=swap" rel="stylesheet">
+
+  <!-- hexo site css -->
+  
+<link rel="stylesheet" href="/css/base.css">
+<link rel="stylesheet" href="/iconfont/iconfont.css">
+<link rel="stylesheet" href="/css/github-markdown.css">
+<link rel="stylesheet" href="/css/highlight.css">
+
+
+  <!-- jquery3.3.1 -->
+  <script src="https://cdn.bootcss.com/jquery/3.3.1/jquery.min.js"></script>
+
+  <!-- fancybox -->
+  <link href="https://cdn.bootcss.com/fancybox/3.5.2/jquery.fancybox.min.css" rel="stylesheet">
+  <script async src="https://cdn.bootcss.com/fancybox/3.5.2/jquery.fancybox.min.js"></script>
+  
+<script src="/js/fancybox.js"></script>
+
+
+  
+
+<meta name="generator" content="Hexo 5.1.1"></head>
+
+
+  <body>
+    <div id="app">
+      <div class="header">
+  <div class="avatar">
+    <a href="/">
+      <!-- 头像取消懒加载，添加no-lazy -->
+      
+        <img src="/images/avatar.png" alt="">
+      
+    </a>
+    <div class="nickname"><a href="/">Laious</a></div>
+  </div>
+  <div class="navbar">
+    <ul>
+      
+        <li class="nav-item" data-path="/">
+          <a href="/">Home</a>
+        </li>
+      
+        <li class="nav-item" data-path="/archives/">
+          <a href="/archives/">Archives</a>
+        </li>
+      
+        <li class="nav-item" data-path="/categories/">
+          <a href="/categories/">Categories</a>
+        </li>
+      
+        <li class="nav-item" data-path="/tags/">
+          <a href="/tags/">Tags</a>
+        </li>
+      
+        <li class="nav-item" data-path="/about/">
+          <a href="/about/">About</a>
+        </li>
+      
+    </ul>
+  </div>
+</div>
+
+
+<script src="/js/activeNav.js"></script>
+
+
+
+      <div class="flex-container">
+        <!-- 文章详情页，展示文章具体内容，url形式：https://yoursite/文章标题/ -->
+<!-- 同时为「标签tag」，「朋友friend」，「分类categories」，「关于about」页面的承载页面，具体展示取决于page.type -->
+
+
+
+  
+
+  
+
+  
+
+  
+  <!-- 文章内容页 url形式：https://yoursite/文章标题/ -->
+  <div class="container post-details" id="post-details">
+    <div class="post-content">
+      <div class="post-title">量化的原理和相关实现</div>
+      <div class="post-attach">
+        <span class="post-pubtime">
+          <i class="iconfont icon-updatetime" title="更新时间"></i>
+          2021-04-20
+        </span>
+        
+              <span class="post-categories">
+                <i class="iconfont icon-bookmark" title="分类"></i>
+                
+                <span class="span--category">
+                  <a href="/categories/%E9%87%8F%E5%8C%96/" title="量化">
+                    <b>#</b> 量化
+                  </a>
+                </span>
+                
+              </span>
+          
+              <span class="post-tags">
+                <i class="iconfont icon-tags" title="标签"></i>
+                
+                <span class="span--tag">
+                  <a href="/tags/%E9%87%8F%E5%8C%96/" title="量化">
+                    <b>#</b> 量化
+                  </a>
+                </span>
+                
+              </span>
+          
+      </div>
+      <div class="markdown-body">
+        <hr>
+<p>&ensp;&ensp;TensorRT中量化的实现目前还没有开源相关的代码，这里看一下量化的实现原理，然后结合相关原理看一下ncnn中量化相关的实现。<br>&ensp;&ensp;卷积量化的一个简单的流程是: 1.权重量化（fp32-&gt;int8）,2.intput量化(fp32-&gt;int8),3.权重和input做矩阵乘法（int8<em>int8 –&gt;int 32）;4.对得到的int32值进行反量化回到fp32(int32–&gt;fp32);5.加上偏置（fp32–&gt;fp32）.<br>&ensp;&ensp;上面的过程中只对卷积层的卷积核权重和输入的特征数据进行了量化，具体的fp32到int8的量化原理是int8 = scales <em>fp32（实际上完整的公式是int8 = fp32</em>scales + blases）,但是TensorRT中对于量化的介绍表明，量化过程中的偏差biases不需要，所以实际实现采用的是一个线性公式。反量化int32到fp32，因为权重和输入是做乘法，假设权重的量化是sclaes_1,则weights(int8) = scales_1</em>weights(fp32);input的量化是scales_2,input(int8) = scales_2<em>inputs(fp32)，反量化的scales3 = 1/(scales_1</em>scales_2).<br>&ensp;&ensp;再来看一下怎么计算相应的scales_1和scales_2，这里的两个scales的意义是为了将fp32的值映射到int8的范围，int8的取值范围是[-127,+128],从而选取合适的fp32的取值范围就可以实现fp32到int8的映射，其中输入数据input的scales的计算采用如下放是实现：假设fp32的取值范围是[-T,T]，则scales = T/127;TensorRT中的介绍是选取一个合适的范围T，截断一部分数据，通过合适的T，既能保证足够的分辨率，也不会截断过多的数据（如果直接取fp32中最大值作为T的取值，数据如果不是对称分布的化，影响会比较大，不能保证量化后的数据分布和量化前一致，而且T的取值范围过大。会导致量化后的精度变低，取值范围太小会截断大部分的数据），具体T的取值通过<a target="_blank" rel="noopener" href="https://www.jianshu.com/p/7b7c0777f74d">LK散度</a>来判断是否合适。KL散度值越小则T的取值越好。<br>&ensp;&ensp;在计算KL散度的时候假设fp32的数据分布是P,int8的分布是Q，统计两个分布的直方图用来计算KL散度时，需要保证两者统计直方图的长度一致，比如说int8的范围一直是-127~128,统计的长度相对固定，但是fp32的统计范围是不确定的，TensorRT的介绍中，通过将int8的统计扩展到fp32一样的长度，来进行KL散度的计算，具体的扩展方式比如：假设int8中的一位对应fp32中的8位，则将int8中统计出的每一个值变成8个相同的副本，且每一个值除以8，这样就将int8的统计直方图的长度扩充到和fp32的一致。<br>&ensp;&ensp;然后权重weights的量化scales的计算则是通过在不通的卷积核上提取相应的最大值的绝对值，直接通过线性映射到int8。<br>&ensp;&ensp;NCNN中实现量化卷积计算的相关代码，只看一下具体的量化卷积的实现过程，不涉及NCNN整体结构的内容：</p>
+<pre><code>//src/layers/convlution.cpp中
+int Convolution::create_pipeline(const Option&amp; opt)
+&#123;
+// runtime quantize the weight data
+//对于权重数据的量化
+if (opt.use_int8_inference &amp;&amp; weight_data.elemsize == (size_t)4u &amp;&amp; int8_scale_term)
+&#123;
+    //kernel_w和kernel_h表示卷积核尺寸
+    const int maxk = kernel_w * kernel_h;
+    //weight_data_size表示这一层的权重数据的个数num_output实际上是卷积核个数，也是这一层卷积的输出通道数
+    //num_inpu表示当前层的输入通道数
+    const int num_input = weight_data_size / num_output / maxk;
+    //提取fp32权重并调整相应的维度
+    Mat weight_data_r2 = weight_data.reshape(maxk, num_input, num_output);
+
+    Mat weight_data_int8;
+
+    Option opt_q = opt;
+    opt_q.blob_allocator = weight_data.allocator;
+    opt_q.use_packing_layout = false;
+    //实现权重量化的函数
+    quantize_to_int8(weight_data_r2, weight_data_int8, weight_data_int8_scales, opt_q);
+    if (weight_data_int8.empty())
+        return -100;
+    //用int8的权重作为这一层的权重，并调整数据维度到原来的格式
+    weight_data = weight_data_int8.reshape(weight_data_size);
+&#125;
+
+return 0;
+&#125;
+
+
+int Convolution::load_model(const ModelBin&amp; mb)
+&#123;
+weight_data = mb.load(weight_data_size, 0);
+if (weight_data.empty())
+    return -100;
+
+if (bias_term)
+&#123;
+    bias_data = mb.load(num_output, 1);
+    if (bias_data.empty())
+        return -100;
+&#125;
+
+if (int8_scale_term)
+&#123;
+    //在这里加载相关的int8权重量化的scales值，具体是从相应的bin文件内加载
+    //然后这里直接能看到加载的数量是num_output，也就是说，一个卷积核中的weights共用一个scales值
+    weight_data_int8_scales = mb.load(num_output, 1);
+    //这里加载相应层次的input数据的量化参数，这里能看到实际上该层input参数都是共用一个量化scales
+    bottom_blob_int8_scales = mb.load(1, 1);
+&#125;
+
+if (int8_scale_term &gt; 100)
+&#123;
+    top_blob_int8_scales = mb.load(1, 1);
+&#125;
+
+return 0;
+&#125;</code></pre>
+<p>&ensp;&ensp;src/mat.cpp中的quantize_to_int8实现：</p>
+<pre><code> //接收fp32的权重矩阵和存储int8权重的矩阵，以及相关的量化scales值和对应的op
+ void quantize_to_int8(const Mat&amp; src, Mat&amp; dst, const Mat&amp; scale_data, const Option&amp; opt)
+ &#123;
+//创建一个量化层
+//quantize的具体定义在src/layer/quantize.cpp中，这里定义了相关的量化操作的具体实现
+Layer* quantize = create_layer(LayerType::Quantize);
+
+ParamDict pd;
+pd.set(0, scale_data.w);
+
+quantize-&gt;load_param(pd);
+
+Mat weights[1];
+weights[0] = scale_data;
+
+quantize-&gt;load_model(ModelBinFromMatArray(weights));
+
+quantize-&gt;create_pipeline(opt);
+//量化前传实现了相应的权重和input的量化计算
+quantize-&gt;forward(src, dst, opt);
+
+quantize-&gt;destroy_pipeline(opt);
+
+delete quantize;
+&#125;</code></pre>
+<p>&ensp;&ensp;src/quantize.cpp:</p>
+<pre><code>int Quantize::forward(const Mat&amp; bottom_blob, Mat&amp; top_blob, const Option&amp; opt) const
+&#123;
+int dims = bottom_blob.dims;
+
+if (dims == 1)
+&#123;
+    int w = bottom_blob.w;
+
+    top_blob.create(w, (size_t)1u, opt.blob_allocator);
+    if (top_blob.empty())
+        return -100;
+
+    const float* ptr = bottom_blob;
+    signed char* outptr = top_blob;
+
+    if (scale_data_size == 1)
+    &#123;
+        const float scale = scale_data[0];
+
+        #pragma omp parallel for num_threads(opt.num_threads)
+        for (int i = 0; i &lt; w; i++)
+        &#123;
+            outptr[i] = float2int8(ptr[i] * scale);
+        &#125;
+    &#125;
+    else
+    &#123;
+        #pragma omp parallel for num_threads(opt.num_threads)
+        for (int i = 0; i &lt; w; i++)
+        &#123;
+            outptr[i] = float2int8(ptr[i] * scale_data[i]);
+        &#125;
+    &#125;
+&#125;
+
+if (dims == 2)
+&#123;
+    int w = bottom_blob.w;
+    int h = bottom_blob.h;
+
+    top_blob.create(w, h, (size_t)1u, opt.blob_allocator);
+    if (top_blob.empty())
+        return -100;
+
+    #pragma omp parallel for num_threads(opt.num_threads)
+    for (int i = 0; i &lt; h; i++)
+    &#123;
+        const float* ptr0 = bottom_blob.row(i);
+        signed char* outptr0 = top_blob.row&lt;signed char&gt;(i);
+
+        const float scale = scale_data_size == 1 ? scale_data[0] : scale_data[i];
+
+        for (int j = 0; j &lt; w; j++)
+        &#123;
+            outptr0[j] = float2int8(ptr0[j] * scale);
+        &#125;
+    &#125;
+&#125;
+//结合上面的代码，传入的dims是3，weight_data.reshape(maxk, num_input, num_output)
+//bottom_blob表示的是fp32的权重，top_blob表示int8权重
+if (dims == 3)
+&#123;
+    //这里几个参数实际上就是提取一个个卷积核权重参数的数量
+    //从前面的load看出，一个卷积核用一个scales参数
+    int w = bottom_blob.w;
+    int h = bottom_blob.h;
+    int channels = bottom_blob.c;
+    int size = w * h;
+
+    top_blob.create(w, h, channels, (size_t)1u, opt.blob_allocator);
+    if (top_blob.empty())
+        return -100;
+
+    #pragma omp parallel for num_threads(opt.num_threads)
+    //循环遍历每一个卷积核，channels表示相应的num_output
+    for (int q = 0; q &lt; channels; q++)
+    &#123;
+        const float* ptr = bottom_blob.channel(q);
+        signed char* outptr = top_blob.channel(q);
+
+        const float scale = scale_data_size == 1 ? scale_data[0] : scale_data[q];
+        //循环遍历相应卷积核下的每一个权重数据
+        for (int i = 0; i &lt; size; i++)
+        &#123;
+            //从fp32转到int8，将ptr[i]*scale进行截断
+            outptr[i] = float2int8(ptr[i] * scale);
+        &#125;
+    &#125;
+&#125;
+
+return 0;
+&#125;
+//
+static inline signed char float2int8(float v)
+&#123;
+//通过round返回距离最近的整数，static_cast转换到int32，（int 占4字节，32位）
+int int32 = static_cast&lt;int&gt;(round(v));
+if (int32 &gt; 127) return 127;
+if (int32 &lt; -127) return -127;
+//返回signed char，有符号的字节，表示范围时-128，127，刚好是Int8的范围
+//实际上占用了8位，1字节
+return (signed char)int32;
+&#125;</code></pre>
+<p> &ensp;&ensp;权重的量化就完成了，实际上权重的量化能看出在load模型的时候就会进行了，然后就是每层输入的Input的量化：</p>
+<pre><code>//这里只截取Int8量化相关内容
+int Convolution::forward(const Mat&amp; bottom_blob, Mat&amp; top_blob, const Option&amp; opt) const
+&#123;
+// convolv with NxN kernel
+// value = value + bias
+//bottom_blob表示输入特征矩阵，top_blob表示输出
+if (opt.use_int8_inference &amp;&amp; weight_data.elemsize == (size_t)1u)
+&#123;       
+        //进行int8的推理
+        return forward_int8(bottom_blob, top_blob, opt);
+&#125;
+&#125;
+//这里同样只截取到输入input量化结束
+int Convolution::forward_int8(const Mat&amp; bottom_blob, Mat&amp; top_blob, const Option&amp; opt) const
+&#123;
+int w = bottom_blob.w;
+int h = bottom_blob.h;
+int channels = bottom_blob.c;
+size_t elemsize = bottom_blob.elemsize;
+
+//     NCNN_LOGE(&quot;Convolution input %d x %d  ksize=%d %d  stride=%d %d&quot;, w, h, kernel_w, kernel_h, stride_w, stride_h);
+
+const int kernel_extent_w = dilation_w * (kernel_w - 1) + 1;
+const int kernel_extent_h = dilation_h * (kernel_h - 1) + 1;
+//声明存储量化输入的矩阵
+Mat bottom_blob_unbordered = bottom_blob;
+//先判断输入特征矩阵元素的字节是不是1，如果不是，进行int8的量化，如果已经是Int8的输入，就不用了，跟这个函数最后能对应起来（也就是区分是否采用了dequantize还是requantize）
+if (elemsize != 1)
+&#123;
+    Option opt_g = opt;
+    opt_g.blob_allocator = opt.workspace_allocator;
+    //对输入特征矩阵进行量化。。具体实现上面说过了
+    quantize_to_int8(bottom_blob, bottom_blob_unbordered, bottom_blob_int8_scales, opt_g);
+&#125;
+
+Mat bottom_blob_bordered;
+//这里就能看到用量化后的输入参与后面padding等计算了
+make_padding(bottom_blob_unbordered, bottom_blob_bordered, opt);
+if (bottom_blob_bordered.empty())
+    return -100;
+&#125;</code></pre>
+<p> &ensp;&ensp;都算完了之后在看一下反量化（dequantize）的实现：</p>
+<pre><code>//还是在forward_int8中的部分内容
+int Convolution::forward_int8(const Mat&amp; bottom_blob, Mat&amp; top_blob, const Option&amp; opt) const
+&#123;
+    ......
+    //判断是否启用int8反量化
+    bool use_int8_requantize = int8_scale_term &gt; 100;
+    size_t out_elemsize = use_int8_requantize ? 1u : 4u;
+    .....
+    float scale_in;
+            if (weight_data_int8_scales[p] == 0)
+                scale_in = 0;
+            else
+            //计算相应的反量化参数
+                scale_in = 1.f / (bottom_blob_int8_scales[0] * weight_data_int8_scales[p]);
+            //完成int32到fp32的转换
+            float sumfp32 = sum * scale_in;
+            //完成卷积操做中的偏置的相加
+            if (bias_term)
+                sumfp32 += bias_data[p];
+            //进行激活
+            if (activation_type == 1)
+    ......
+    //这里如果使用use_int8_requantize的话
+    if (use_int8_requantize)
+            &#123;
+                // requantize
+                float scale_out = top_blob_int8_scales[0];
+                //将fp32的激活输出量化到Int8作为下一层的输入，实际上是给下一层输入做int8
+                //这里就是一个层次融合的过程，具体看下面的介绍
+                signed char sums8 = float2int8(sumfp32 * scale_out);
+                outptr[0] = sums8;
+                outptr += 1;
+            &#125;
+            else
+            &#123;
+                // dequantize
+                //不使用use_int8_requantize的话，直接就是fp32的输出到下一层
+                ((float*)outptr)[0] = sumfp32;
+                outptr += 4;
+            &#125;
+&#125;</code></pre>
+<p>&ensp;&ensp;ncnn中的量化推理或者说int8的推理，有两种实现，上面的流程是输入fp32的模型，和int8的量化tabel文件，推理的时候进行量化操作，还可以先将模型生成int8的params和bin文件，直接推理。再看一下关于量化参数的计算了，也就是计算相关的fp32的取值范围T的那部分代码实现了，关于参数的计算实现在tools/quantize下的ncnn2tabel.cpp文件下，实现生成int8校准文件并保存的函数是post_training_quantize：</p>
+<pre><code>//const int ret = post_training_quantize(image_file_path_list, ncnn_param_file_path, ncnn_bin_file_path, saved_table_file_path, pre_param);
+//接收的参数分别是：校准数据图像路径列表，ncnn param文件路径（模型结构），bin文件路径（权重等权值），存储校准文件的路径，pre_param表示图片数据的相关数据信息
+static int post_training_quantize(const std::vector&lt;std::string&gt;&amp; image_list, const std::string&amp; param_path, const std::string&amp; bin_path, const std::string&amp; table_path, struct PreParam&amp; per_param)
+&#123;
+size_t size = image_list.size();
+
+QuantNet net;
+net.opt = g_default_option;
+
+net.load_param(param_path.c_str());
+net.load_model(bin_path.c_str());
+
+float mean_vals[3];
+float norm_vals[3];
+
+int width = per_param.width;
+int height = per_param.height;
+bool swapRB = per_param.swapRB;
+
+mean_vals[0] = per_param.mean[0];
+mean_vals[1] = per_param.mean[1];
+mean_vals[2] = per_param.mean[2];
+
+norm_vals[0] = per_param.norm[0];
+norm_vals[1] = per_param.norm[1];
+norm_vals[2] = per_param.norm[2];
+
+g_blob_pool_allocator.clear();
+g_workspace_pool_allocator.clear();
+
+net.get_input_names();
+net.get_conv_names();
+net.get_conv_bottom_blob_names();
+//这里计算权重的量化参数
+net.get_conv_weight_blob_scales();
+
+if (net.input_names.empty())
+&#123;
+    fprintf(stderr, &quot;not found [Input] Layer, Check your ncnn.param \n&quot;);
+    return -1;
+&#125;
+//从这里开始看，前面都是在抽取相关数值和分配内存等操作
+FILE* fp = fopen(table_path.c_str(), &quot;w&quot;);
+
+// save quantization scale of weight
+printf(&quot;====&gt; Quantize the parameters.\n&quot;);
+//循环遍历每一层，保存对应的权重的量化参数
+for (size_t i = 0; i &lt; net.conv_names.size(); i++)
+&#123;
+
+    std::string layer_name = net.conv_names[i];
+    std::string blob_name = net.conv_bottom_blob_names[layer_name];
+    std::vector&lt;float&gt; weight_scale_n = net.weight_scales[layer_name];
+
+    fprintf(fp, &quot;%s_param_0 &quot;, layer_name.c_str());
+    for (size_t j = 0; j &lt; weight_scale_n.size(); j++)
+    &#123;
+        fprintf(fp, &quot;%f &quot;, weight_scale_n[j]);
+    &#125;
+    fprintf(fp, &quot;\n&quot;);
+&#125;
+
+// initial quantization data
+//初始化量化数据
+std::vector&lt;QuantizeData&gt; quantize_datas;
+//循环遍历模型中的没一个层次
+for (size_t i = 0; i &lt; net.conv_names.size(); i++)
+&#123;
+    std::string layer_name = net.conv_names[i];
+    //将其中每一层quantize_data中的num_bins初始化成2048
+    //QuantizeData的定义参考相关的声明，里面存储了在统计直方图相关的参数以及方法
+    QuantizeData quantize_data(layer_name, 2048);
+    quantize_datas.push_back(quantize_data);
+&#125;
+
+// step 1 count the max value
+//遍历整个校准数据图像，运行模型，计算每一个需要量化的层次的输入Input或者说是激活输出的最大值，这里最终提取每一个层次上激活值最大的那一个
+printf(&quot;====&gt; Quantize the activation.\n&quot;);
+printf(&quot;    ====&gt; step 1 : find the max value.\n&quot;);
+
+for (size_t i = 0; i &lt; image_list.size(); i++)
+&#123;
+    std::string img_name = image_list[i];
+
+    if ((i + 1) % 100 == 0)
+    &#123;
+        fprintf(stderr, &quot;          %d/%d\n&quot;, static_cast&lt;int&gt;(i + 1), static_cast&lt;int&gt;(size));
+    &#125;
+
+#if OpenCV_VERSION_MAJOR &gt; 2
+    cv::Mat bgr = cv::imread(img_name, cv::IMREAD_COLOR);
+#else
+    cv::Mat bgr = cv::imread(img_name, CV_LOAD_IMAGE_COLOR);
+#endif
+    if (bgr.empty())
+    &#123;
+        fprintf(stderr, &quot;cv::imread %s failed\n&quot;, img_name.c_str());
+        return -1;
+    &#125;
+
+    ncnn::Mat in = ncnn::Mat::from_pixels_resize(bgr.data, swapRB ? ncnn::Mat::PIXEL_BGR2RGB : ncnn::Mat::PIXEL_BGR, bgr.cols, bgr.rows, width, height);
+    in.substract_mean_normalize(mean_vals, norm_vals);
+    //运行模型
+    ncnn::Extractor ex = net.create_extractor();
+    ex.input(net.input_names[0].c_str(), in);
+    //循环遍历每一层
+    for (size_t j = 0; j &lt; net.conv_names.size(); j++)
+    &#123;
+        std::string layer_name = net.conv_names[j];
+        std::string blob_name = net.conv_bottom_blob_names[layer_name];
+
+        ncnn::Mat out;
+        //提取对应层次的input到out
+        ex.extract(blob_name.c_str(), out);
+        //循环遍历每一层的quantize_data，找到属于当前层的quantize_data
+        for (size_t k = 0; k &lt; quantize_datas.size(); k++)
+        &#123;
+            if (quantize_datas[k].name == layer_name)
+            &#123;
+/*
+int QuantizeData::initial_blob_max(ncnn::Mat data)
+&#123;
+const int channel_num = data.c;
+const int size = data.w * data.h;
+
+for (int q = 0; q &lt; channel_num; q++)
+&#123;
+    const float* data_n = data.channel(q);
+    for (int i = 0; i &lt; size; i++)
+    &#123;
+        max_value = std::max(max_value, std::fabs(data_n[i]));
+    &#125;
+&#125;
+
+return 0;
+&#125;*/
+                //提取当前input的最大值，也就是绝对值最大的那一个
+                //最终得到的就是在整个校准数据集上，每一层激活输出的最大的绝对值
+                quantize_datas[k].initial_blob_max(out);
+                break;
+            &#125;
+        &#125;
+    &#125;
+&#125;
+
+// step 2 histogram_interval
+//计算直方图的间隔
+printf(&quot;    ====&gt; step 2 : generate the histogram_interval.\n&quot;);
+//还是类似的循环遍历每一个层次
+for (size_t i = 0; i &lt; net.conv_names.size(); i++)
+&#123;
+    std::string layer_name = net.conv_names[i];
+
+    for (size_t k = 0; k &lt; quantize_datas.size(); k++)
+    &#123;
+        if (quantize_datas[k].name == layer_name)
+        &#123;
+        /*int QuantizeData::initial_histogram_interval()
+    &#123;
+    //这里的num_bins实际上也就是前面初始化过的2048，也就是说fp32直方图分布的统计数量是2048个
+histogram_interval = max_value / static_cast&lt;float&gt;(num_bins);
+
+return 0;
+    &#125;
+*/
+            //计算直方图的间隔
+            quantize_datas[k].initial_histogram_interval();
+
+            fprintf(stderr, &quot;%-20s : max = %-15f interval = %-10f\n&quot;, quantize_datas[k].name.c_str(), quantize_datas[k].max_value, quantize_datas[k].histogram_interval);
+            break;
+        &#125;
+    &#125;
+&#125;
+
+// step 3 histogram
+//计算生成统计直方图
+printf(&quot;    ====&gt; step 3 : generate the histogram.\n&quot;);
+//遍历整个校准数据集，在进行一次前向传播
+for (size_t i = 0; i &lt; image_list.size(); i++)
+&#123;
+    std::string img_name = image_list[i];
+
+    if ((i + 1) % 100 == 0)
+        fprintf(stderr, &quot;          %d/%d\n&quot;, (int)(i + 1), (int)size);
+#if OpenCV_VERSION_MAJOR &gt; 2
+    cv::Mat bgr = cv::imread(img_name, cv::IMREAD_COLOR);
+#else
+    cv::Mat bgr = cv::imread(img_name, CV_LOAD_IMAGE_COLOR);
+#endif
+    if (bgr.empty())
+    &#123;
+        fprintf(stderr, &quot;cv::imread %s failed\n&quot;, img_name.c_str());
+        return -1;
+    &#125;
+
+    ncnn::Mat in = ncnn::Mat::from_pixels_resize(bgr.data, swapRB ? ncnn::Mat::PIXEL_BGR2RGB : ncnn::Mat::PIXEL_BGR, bgr.cols, bgr.rows, width, height);
+    in.substract_mean_normalize(mean_vals, norm_vals);
+
+    ncnn::Extractor ex = net.create_extractor();
+    ex.input(net.input_names[0].c_str(), in);
+    //还是类似的去计算每一个层次对应的直方图
+    for (size_t j = 0; j &lt; net.conv_names.size(); j++)
+    &#123;
+        std::string layer_name = net.conv_names[j];
+        std::string blob_name = net.conv_bottom_blob_names[layer_name];
+
+        ncnn::Mat out;
+        ex.extract(blob_name.c_str(), out);
+
+        for (size_t k = 0; k &lt; quantize_datas.size(); k++)
+        &#123;
+            if (quantize_datas[k].name == layer_name)
+            &#123;
+
+    /*int QuantizeData::update_histogram(ncnn::Mat data)
+&#123;
+//这里进行相应层次的直方图的生成
+const int channel_num = data.c;
+const int size = data.w * data.h;
+
+for (int q = 0; q &lt; channel_num; q++)
+&#123;
+    const float* data_n = data.channel(q);
+    for (int i = 0; i &lt; size; i++)
+    &#123;
+        //如果激活输出是0，则不参与直方图的统计      
+        if (data_n[i] == 0)
+            continue;
+        //计算相应的数值在直方图的哪一个间隔内
+        const int index = std::min(static_cast&lt;int&gt;(std::abs(data_n[i]) / histogram_interval), 2047);
+        //进行相应的计数
+        histogram[index]++;
+    &#125;
+&#125;
+
+return 0;
+&#125;*/
+                //统计fp32的数据直方图
+                quantize_datas[k].update_histogram(out);
+                break;
+            &#125;
+        &#125;
+    &#125;
+&#125;
+
+// step4 kld
+//计算相应的KL散度
+printf(&quot;    ====&gt; step 4 : using kld to find the best threshold value.\n&quot;);
+//循环遍历每一个层次
+for (size_t i = 0; i &lt; net.conv_names.size(); i++)
+&#123;
+    std::string layer_name = net.conv_names[i];
+    std::string blob_name = net.conv_bottom_blob_names[layer_name];
+    fprintf(stderr, &quot;%-20s &quot;, layer_name.c_str());
+
+    for (size_t k = 0; k &lt; quantize_datas.size(); k++)
+    &#123;
+        if (quantize_datas[k].name == layer_name)
+        &#123;
+            //计算相应层次的量化scales值
+            quantize_datas[k].get_data_blob_scale();
+            fprintf(stderr, &quot;bin : %-8d threshold : %-15f interval : %-10f scale : %-10f\n&quot;,
+                    quantize_datas[k].threshold_bin,
+                    quantize_datas[k].threshold,
+                    quantize_datas[k].histogram_interval,
+                    quantize_datas[k].scale);
+
+            fprintf(fp, &quot;%s %f\n&quot;, layer_name.c_str(), quantize_datas[k].scale);
+
+            break;
+        &#125;
+    &#125;
+&#125;
+
+fclose(fp);
+printf(&quot;====&gt; Save the calibration table done.\n&quot;);
+
+return 0;
+&#125;
+
+//对直方图进行归一化
+int QuantizeData::normalize_histogram()
+&#123;
+const size_t length = histogram.size();
+float sum = 0;
+
+for (size_t i = 0; i &lt; length; i++)
+    sum += histogram[i];
+
+for (size_t i = 0; i &lt; length; i++)
+    histogram[i] /= sum;
+
+return 0;
+&#125;
+//计算相应的input的具体scales
+float QuantizeData::get_data_blob_scale()
+&#123;
+//直方图归一化
+normalize_histogram();
+//用KL散度计算最终用多少个bins比较合适，比如一开始的时候fp32的直方图统计用的是初始化的20481个bins
+threshold_bin = threshold_distribution(histogram);
+//得到最终的bins数量之后，计算截断阈值T,histogram_interval表示直方图间隔
+threshold = (static_cast&lt;float&gt;(threshold_bin) + 0.5f) * histogram_interval;
+//计算相应的权重量化的scales
+scale = 127 / threshold;
+return scale;
+&#125;
+
+//计算最终用多少个Bins合适
+int QuantizeData::threshold_distribution(const std::vector&lt;float&gt;&amp; distribution, const int target_bin) const
+&#123;
+//target_bin，初始化128也就是int8分布的bins数量
+int target_threshold = target_bin;
+float min_kl_divergence = 1000;
+const int length = static_cast&lt;int&gt;(distribution.size());
+
+std::vector&lt;float&gt; quantize_distribution(target_bin);
+
+float threshold_sum = 0;
+//将fp32分布中bins超过128以后的bins统计累加起来
+for (int threshold = target_bin; threshold &lt; length; threshold++)
+&#123;
+    threshold_sum += distribution[threshold];
+&#125;
+//target_bins = 128，lengths = 2048
+//通过threshold循环去取不同的bins
+//取不同的bins是从小的bins依次往大的bins去取
+for (int threshold = target_bin; threshold &lt; length; threshold++)
+&#123;
+    //定义新分布的开始和结束位置
+    std::vector&lt;float&gt; t_distribution(distribution.begin(), distribution.begin() + threshold);
+     //将原始fp32分布中截断的数据，或者说超过threshold的bins中的统计累加到最后一个bins中
+    t_distribution[threshold - 1] += threshold_sum;
+    //同时更新相应的threshold_sum
+    threshold_sum -= distribution[threshold];
+
+    // get P
+     //初始化int8的分布统计
+    fill(quantize_distribution.begin(), quantize_distribution.end(), 0.0f);
+    //这里的num_per_bin表示的是当前threshold下的scales，也可以看成是当前fp32分布映射到Int8分布之后，int8每一个统计对应fp32中的bins数量
+    const float num_per_bin = static_cast&lt;float&gt;(threshold) / static_cast&lt;float&gt;(target_bin);
+    //这里开始根据上面截断的fp32分布得到对应的int8分布
+    //循环遍历int8分布中每一个统计位置
+    for (int i = 0; i &lt; target_bin; i++)
+    &#123;
+         //确定当前统计位置的起始和结束bins索引，是fp32分布中的索引 
+        const float start = static_cast&lt;float&gt;(i) * num_per_bin;
+        const float end = start + num_per_bin;
+        //ceil返回大于或等于start的最小整数，left_upper表示当前int8统计位置在fp32bins中的期起点bins
+        const int left_upper = static_cast&lt;int&gt;(ceil(start));
+        //如果不是刚好取整
+        if (static_cast&lt;float&gt;(left_upper) &gt; start)
+        &#123;
+            const float left_scale = static_cast&lt;float&gt;(left_upper) - start;
+            //将对应的fp32中统计bins中的值按照比例添加到int8的统计中，注意这里是从原来的2048bins的fp32分布中加
+            quantize_distribution[i] += left_scale * distribution[left_upper - 1];
+        &#125;
+        //结束位置也是一样的处理，没有取整的话。。多余的部分按照比例添加进来
+        const int right_lower = static_cast&lt;int&gt;(floor(end));
+
+        if (static_cast&lt;float&gt;(right_lower) &lt; end)
+        &#123;
+            const float right_scale = end - static_cast&lt;float&gt;(right_lower);
+            quantize_distribution[i] += right_scale * distribution[right_lower];
+        &#125;
+        //将刚好处于left_upper和right_lower中的统计添加到int8分布中
+        for (int j = left_upper; j &lt; right_lower; j++)
+        &#123;
+            quantize_distribution[i] += distribution[j];
+        &#125;
+    &#125;
+
+    // get Q
+    //扩展int8的分布
+    std::vector&lt;float&gt; expand_distribution(threshold, 0);
+    //循环遍历int8分布中的每一个统计位置
+    for (int i = 0; i &lt; target_bin; i++)
+    &#123;
+    //还是类似的定位对应的起始和结束的位置
+        const float start = static_cast&lt;float&gt;(i) * num_per_bin;
+        const float end = start + num_per_bin;
+
+        float count = 0;
+
+        const int left_upper = static_cast&lt;int&gt;(ceil(start));
+        float left_scale = 0;
+         //将没有取证整时的bin中的统计进行处理
+        if (static_cast&lt;float&gt;(left_upper) &gt; start)
+        &#123;
+            //统计的时候count等于0不算在里面
+            left_scale = static_cast&lt;float&gt;(left_upper) - start;
+            if (distribution[left_upper - 1] != 0)
+            &#123;
+                count += left_scale;
+            &#125;
+        &#125;
+
+        const int right_lower = static_cast&lt;int&gt;(floor(end));
+        float right_scale = 0;
+        if (static_cast&lt;float&gt;(right_lower) &lt; end)
+        &#123;
+            right_scale = end - static_cast&lt;float&gt;(right_lower);
+            if (distribution[right_lower] != 0)
+            &#123;
+                count += right_scale;
+            &#125;
+        &#125;
+
+        for (int j = left_upper; j &lt; right_lower; j++)
+        &#123;
+            if (distribution[j] != 0)
+            &#123;
+                count++;
+            &#125;
+        &#125;
+        //count计数的时int8分布统计位置中，一个统计位置包括多少个原来的fp32统计位
+        //expand_value表示int8分布进行扩展时，当前int8统计为上的值应该调整成多少
+        const float expand_value = quantize_distribution[i] / count;
+        //然后完成对扩展的Int8统计的赋值。。还是要处理不是刚好取整的问题
+        if (static_cast&lt;float&gt;(left_upper) &gt; start)
+        &#123;
+            if (distribution[left_upper - 1] != 0)
+            &#123;
+                expand_distribution[left_upper - 1] += expand_value * left_scale;
+            &#125;
+        &#125;
+        if (static_cast&lt;float&gt;(right_lower) &lt; end)
+        &#123;
+            if (distribution[right_lower] != 0)
+            &#123;
+                expand_distribution[right_lower] += expand_value * right_scale;
+            &#125;
+        &#125;
+        for (int j = left_upper; j &lt; right_lower; j++)
+        &#123;
+            if (distribution[j] != 0)
+            &#123;
+                expand_distribution[j] += expand_value;
+            &#125;
+        &#125;
+    &#125;
+
+    // kl
+    //计算相应的kl散度
+    const float kl_divergence = compute_kl_divergence(t_distribution, expand_distribution);
+
+    // the best num of bin
+    //找到kl散度最小的bins数量
+    if (kl_divergence &lt; min_kl_divergence)
+    &#123;
+        min_kl_divergence = kl_divergence;
+        target_threshold = threshold;
+    &#125;
+&#125;
+
+return target_threshold;
+&#125;
+
+
+//计算权重的量化scales参数
+int QuantNet::get_conv_weight_blob_scales()
+&#123;
+for (size_t i = 0; i &lt; layers.size(); i++)
+&#123;
+    const ncnn::Layer* layer = layers[i];
+    //看一下卷积层权重量化参数的计算。。其他的也是类似的
+    if (layer-&gt;type == &quot;Convolution&quot;)
+    &#123;
+        const ncnn::Convolution* convolution = static_cast&lt;const ncnn::Convolution*&gt;(layer);
+
+        std::string name = layer-&gt;name;
+        //这里的output实际上也就是相应的每一个卷积核的参数量了
+        const int weight_data_size_output = convolution-&gt;weight_data_size / convolution-&gt;num_output;
+        std::vector&lt;float&gt; scales;
+
+        // int8 winograd F43 needs weight data to use 6bit quantization
+        bool quant_6bit = false;
+        int kernel_w = convolution-&gt;kernel_w;
+        int kernel_h = convolution-&gt;kernel_h;
+        int dilation_w = convolution-&gt;dilation_w;
+        int dilation_h = convolution-&gt;dilation_h;
+        int stride_w = convolution-&gt;stride_w;
+        int stride_h = convolution-&gt;stride_h;
+
+        if (kernel_w == 3 &amp;&amp; kernel_h == 3 &amp;&amp; dilation_w == 1 &amp;&amp; dilation_h == 1 &amp;&amp; stride_w == 1 &amp;&amp; stride_h == 1)
+            quant_6bit = true;
+        //循环遍历每一个卷积核
+        for (int n = 0; n &lt; convolution-&gt;num_output; n++)
+        &#123;
+        //根据相应的索引抽取对应卷积核的参数
+            const ncnn::Mat weight_data_n = convolution-&gt;weight_data.range(weight_data_size_output * n, weight_data_size_output);
+            const float* data_n = weight_data_n;
+            //声明存储最大值变量
+            float max_value = std::numeric_limits&lt;float&gt;::min();
+            //遍历单个卷积核的全部参数，找到绝对值最大的值
+            for (int k = 0; k &lt; weight_data_size_output; k++)
+            &#123;
+                max_value = std::max(max_value, std::fabs(data_n[k]));
+            &#125;
+
+            if (quant_6bit)
+            &#123;
+                scales.push_back(31 / max_value);
+            &#125;
+            else
+            &#123;
+            //int8的线性映射。。
+                scales.push_back(127 / max_value);
+            &#125;
+        &#125;
+        //记录对应的weights_scales值
+        weight_scales[name] = scales;
+    &#125;
+
+    if (layer-&gt;type == &quot;ConvolutionDepthWise&quot;)
+    &#123;
+        const ncnn::ConvolutionDepthWise* convolutiondepthwise = static_cast&lt;const ncnn::ConvolutionDepthWise*&gt;(layer);
+
+        std::string name = layer-&gt;name;
+        const int weight_data_size_output = convolutiondepthwise-&gt;weight_data_size / convolutiondepthwise-&gt;group;
+        std::vector&lt;float&gt; scales;
+
+        for (int n = 0; n &lt; convolutiondepthwise-&gt;group; n++)
+        &#123;
+            const ncnn::Mat weight_data_n = convolutiondepthwise-&gt;weight_data.range(weight_data_size_output * n, weight_data_size_output);
+            const float* data_n = weight_data_n;
+            float max_value = std::numeric_limits&lt;float&gt;::min();
+
+            for (int k = 0; k &lt; weight_data_size_output; k++)
+            &#123;
+                max_value = std::max(max_value, std::fabs(data_n[k]));
+            &#125;
+
+            scales.push_back(127 / max_value);
+        &#125;
+
+        weight_scales[name] = scales;
+    &#125;
+
+    if (layer-&gt;type == &quot;InnerProduct&quot;)
+    &#123;
+        const ncnn::InnerProduct* innerproduct = static_cast&lt;const ncnn::InnerProduct*&gt;(layer);
+
+        std::string name = layer-&gt;name;
+        const int weight_data_size_output = innerproduct-&gt;weight_data_size / innerproduct-&gt;num_output;
+        std::vector&lt;float&gt; scales;
+
+        for (int n = 0; n &lt; innerproduct-&gt;num_output; n++)
+        &#123;
+            const ncnn::Mat weight_data_n = innerproduct-&gt;weight_data.range(weight_data_size_output * n, weight_data_size_output);
+            const float* data_n = weight_data_n;
+            float max_value = std::numeric_limits&lt;float&gt;::min();
+
+            for (int k = 0; k &lt; weight_data_size_output; k++)
+                max_value = std::max(max_value, std::fabs(data_n[k]));
+
+            scales.push_back(127 / max_value);
+        &#125;
+
+        weight_scales[name] = scales;
+    &#125;
+&#125;
+
+return 0;
+&#125;
+
+//计算相应的kl散度，根据kl散度的计算公式。。
+float QuantizeData::compute_kl_divergence(const std::vector&lt;float&gt;&amp; dist_a, const std::vector&lt;float&gt;&amp; dist_b) const
+&#123;
+const size_t length = dist_a.size();
+assert(dist_b.size() == length);
+float result = 0;
+
+for (size_t i = 0; i &lt; length; i++)
+&#123;
+    if (dist_a[i] != 0)
+    &#123;
+        if (dist_b[i] == 0)
+        &#123;
+            result += 1;
+        &#125;
+        else
+        &#123;
+            result += dist_a[i] * log(dist_a[i] / dist_b[i]);
+        &#125;
+    &#125;
+&#125;
+
+return result;
+&#125;</code></pre>
+<p>&ensp;&ensp;到了这里就得到了fp32模型的int8的量化tabel文件，其中记录了每一层权重和激活的量化scales,然后再看一下ncnn中通过量化tabel文件得到int8模型的过程，实现在src/tools/quantize/ncnn2int8.cpp中，也就是通过int8的量化tabel,将fp32的模型转换成int8的params和bin文件，可以参考其中README的介绍，这里看一下相应的实现：</p>
+<pre><code>int main(int argc, char** argv)
+    &#123;
+if (argc != 6)
+&#123;
+    fprintf(stderr, &quot;usage: %s [inparam] [inbin] [outparam] [outbin] [calibration table]\n&quot;, argv[0]);
+    return -1;
+&#125;
+
+const char* inparam = argv[1];
+const char* inbin = argv[2];
+const char* outparam = argv[3];
+const char* outbin = argv[4];
+const char* int8scale_table_path = argv[5];
+
+NetQuantize quantizer;
+
+// parse the calibration scale table
+if (int8scale_table_path)
+&#123;
+    //读取Int8的量化表文件
+    bool s2 = read_int8scale_table(int8scale_table_path, quantizer.blob_int8scale_table, quantizer.weight_int8scale_table);
+    if (!s2)
+    &#123;
+        fprintf(stderr, &quot;read_int8scale_table failed\n&quot;);
+        return -1;
+    &#125;
+&#125;
+
+//读取模型的param和bin文件，这时候读取进来的是fp32的模型
+quantizer.load_param(inparam);
+if (strcmp(inbin, &quot;null&quot;) == 0)
+&#123;
+    DataReaderFromEmpty dr;
+    quantizer.load_model(dr);
+&#125;
+else
+    quantizer.load_model(inbin);
+//量化卷积层
+quantizer.quantize_convolution();
+//量化convolutiondepthwise
+quantizer.quantize_convolutiondepthwise();
+//量化内积，实际上就是fc层
+quantizer.quantize_innerproduct();
+//算子融合，或者说层间融合
+quantizer.fuse_requantize();
+//保存int8模型的params和bin文件
+quantizer.save(outparam, outbin);
+
+return 0;
+&#125;</code></pre>
+<p>&ensp;&ensp;从上面的流程上看，还是很清晰的一个过程，这里加载模型和最后保存模型的部分就不细看了，看一下量化层次和算子融合的实现：</p>
+<pre><code>int NetQuantize::quantize_convolution()
+&#123;
+//卷积层的量化实现
+const int layer_count = static_cast&lt;int&gt;(layers.size());
+for (int i = 0; i &lt; layer_count; i++)
+&#123;
+    // find convolution layer
+    if (layers[i]-&gt;type != &quot;Convolution&quot;)
+        continue;
+
+    // find convolution layer
+    //定位到卷积层
+    //读取量化tabel文件之后将输入的量化参数存储在blob_int8scale_table中，权重的量化参数存储在weight_int8scale_table里面
+    //抽取对应层次的量化参数
+    std::map&lt;std::string, ncnn::Mat&gt;::iterator iter_data = blob_int8scale_table.find(layers[i]-&gt;name);
+    if (iter_data == blob_int8scale_table.end())
+        continue;
+
+    char key[256];
+    sprintf(key, &quot;%s_param_0&quot;, layers[i]-&gt;name.c_str());
+
+    std::map&lt;std::string, ncnn::Mat&gt;::iterator iter = weight_int8scale_table.find(key);
+    if (iter == weight_int8scale_table.end())
+    &#123;
+        fprintf(stderr, &quot;this layer need to be quantized, but no scale param!\n&quot;);
+        return -1;
+    &#125;
+
+    // Convolution - quantize weight from fp32 to int8
+    ncnn::Convolution* convolution = (ncnn::Convolution*)layers[i];
+    //抽取相应的具体量化参数值，iter里面是[string,value],iter-&gt;second取到具体的参数值
+    ncnn::Mat bottom_blob_int8_scales = iter_data-&gt;second;
+    ncnn::Mat weight_data_int8_scales = iter-&gt;second;
+
+    fprintf(stderr, &quot;quantize_convolution %s\n&quot;, convolution-&gt;name.c_str());
+
+    &#123;
+    //这里具体的量化过程和前面介绍的推理时量化基本一致，也是通过quantize_to_int8来实现的weights量化，需要注意的是，这个过程没有激活的量化只是量化权重数据
+        const int maxk = convolution-&gt;kernel_w * convolution-&gt;kernel_h;
+        const int num_input = convolution-&gt;weight_data_size / convolution-&gt;num_output / maxk;
+
+        ncnn::Mat weight_data_r2 = convolution-&gt;weight_data.reshape(maxk, num_input, convolution-&gt;num_output);
+
+        ncnn::Mat weight_data_int8;
+
+        ncnn::Option opt_q = opt;
+        opt_q.blob_allocator = convolution-&gt;weight_data.allocator;
+        opt_q.use_packing_layout = false;
+        ncnn::quantize_to_int8(weight_data_r2, weight_data_int8, weight_data_int8_scales, opt_q);
+        if (weight_data_int8.empty())
+            return -100;
+        //权重数据的被替换成了int8
+        convolution-&gt;weight_data = weight_data_int8.reshape(convolution-&gt;weight_data_size);
+    &#125;
+
+    convolution-&gt;int8_scale_term = 2;
+    //然后同时保存了当前层的输入量化参数和权重量化参数
+    convolution-&gt;weight_data_int8_scales = weight_data_int8_scales;
+    convolution-&gt;bottom_blob_int8_scales = bottom_blob_int8_scales;
+&#125;
+
+return 0;
+&#125;</code></pre>
+<p>&ensp;&ensp;convolutiondepthwise的量化和上面卷积的过程基本一致，最后同样保存了相应的量化参数，然后看一下fc层的量化:</p>
+<pre><code>int NetQuantize::quantize_innerproduct()
+&#123;
+//量化内积（fc层的量化实现）
+const int layer_count = static_cast&lt;int&gt;(layers.size());
+for (int i = 0; i &lt; layer_count; i++)
+&#123;
+    // find convoultion layer
+    if (layers[i]-&gt;type != &quot;InnerProduct&quot;)
+        continue;
+
+    // find InnerProduct layer
+    //定位相应层次，抽取对应的量化参数
+    std::map&lt;std::string, ncnn::Mat&gt;::iterator iter_data = blob_int8scale_table.find(layers[i]-&gt;name);
+    if (iter_data == blob_int8scale_table.end())
+        continue;
+
+    char key[256];
+    sprintf(key, &quot;%s_param_0&quot;, layers[i]-&gt;name.c_str());
+
+    std::map&lt;std::string, ncnn::Mat&gt;::iterator iter = weight_int8scale_table.find(key);
+    if (iter == weight_int8scale_table.end())
+    &#123;
+        fprintf(stderr, &quot;this layer need to be quantized, but no scale param!\n&quot;);
+        return -1;
+    &#125;
+
+    // InnerProduct - quantize weight from fp32 to int8
+    ncnn::InnerProduct* fc = (ncnn::InnerProduct*)layers[i];
+
+    ncnn::Mat bottom_blob_int8_scales = iter_data-&gt;second;
+    ncnn::Mat weight_data_int8_scales = iter-&gt;second;
+
+    fprintf(stderr, &quot;quantize_convolution %s\n&quot;, fc-&gt;name.c_str());
+
+    &#123;
+        const int num_input = fc-&gt;weight_data_size / fc-&gt;num_output;
+
+        ncnn::Mat weight_data_r2 = fc-&gt;weight_data.reshape(num_input, fc-&gt;num_output);
+
+        ncnn::Mat weight_data_int8;
+        ncnn::Option opt_q = opt;
+        opt_q.use_packing_layout = false;
+        //进行量化操作
+        ncnn::quantize_to_int8(weight_data_r2, weight_data_int8, weight_data_int8_scales, opt_q);
+        if (weight_data_int8.empty())
+            return -100;
+
+        fc-&gt;weight_data = weight_data_int8.reshape(fc-&gt;weight_data_size);
+    &#125;
+
+    fc-&gt;int8_scale_term = 2;
+    //存储相应的量化参数
+    fc-&gt;weight_data_int8_scales = weight_data_int8_scales;
+    fc-&gt;bottom_blob_int8_scales = bottom_blob_int8_scales;
+&#125;
+
+return 0;
+&#125;</code></pre>
+<p>&ensp;&ensp;最后就是fuse_requantize()实现的层间融合了：</p>
+<pre><code>int NetQuantize::fuse_requantize()
+&#123;
+//int8的层间融合实现
+const size_t layer_count = layers.size();
+//循环遍历所有层次
+for (size_t i = 0; i &lt; layer_count; i++)
+&#123;   
+    //当前层不是卷积和ConvolutionDepthWise时直接跳过
+    if (layers[i]-&gt;type != &quot;Convolution&quot; &amp;&amp; layers[i]-&gt;type != &quot;ConvolutionDepthWise&quot;)
+        continue;
+
+    // Convolution/ConvolutionDepthWise - Convolution/ConvolutionDepthWise
+    //当前层是卷积或者ConvolutionDepthWise时
+    //提取当前层的输出索引
+    int top_blob_index = layers[i]-&gt;tops[0];
+
+    //计算下一层的id，也就是i+1
+    size_t j = i + 1;
+    //从下一层开始遍历接下来的层次
+    for (; j &lt; layer_count; j++)
+    &#123;
+        //找到下一个卷积或者ConvolutionDepthWise层
+        if (layers[j]-&gt;type != &quot;Convolution&quot; &amp;&amp; layers[j]-&gt;type != &quot;ConvolutionDepthWise&quot;)
+            continue;
+        //且这一层的输入blob只有一个
+        if (layers[j]-&gt;bottoms.size() != 1)
+            continue;
+        //并且这个输入就是上面那个卷积或者ConvolutionDepthWise产生的输出
+        if (layers[j]-&gt;bottoms[0] == top_blob_index)
+            break;
+    &#125;
+    //如果j恰好时整个网络的最后一层。。直接跳过一次循环
+    if (j == layer_count)
+        continue;
+
+    // fuse requantize
+    //还是融合的操作
+    fprintf(stderr, &quot;fuse_requantize %s %s\n&quot;, layers[i]-&gt;name.c_str(), layers[j]-&gt;name.c_str());
+    //两个都是卷积层
+    if (layers[i]-&gt;type == &quot;Convolution&quot; &amp;&amp; layers[j]-&gt;type == &quot;Convolution&quot;)
+    &#123;
+        ncnn::Convolution* convolution1 = (ncnn::Convolution*)layers[i];
+        ncnn::Convolution* convolution2 = (ncnn::Convolution*)layers[j];
+
+        if (convolution1-&gt;weight_data.elemsize != 1u || convolution2-&gt;weight_data.elemsize != 1u)
+            continue;
+        //将int8_scale_term加上100，这里跟前面的load_params对应，如果这个值超过100，说明当前层的top_blob_int8_scales也需要读取，实际上就是下一层的输入的量化参数了
+        convolution1-&gt;int8_scale_term += 100;
+        //额外给conv1的top_blob_int8_scales赋值，存储的是下一层输入的量化参数
+        convolution1-&gt;top_blob_int8_scales = convolution2-&gt;bottom_blob_int8_scales;
+    &#125;
+    //其他几种组合实现的操作都一样。。。
+    if (layers[i]-&gt;type == &quot;Convolution&quot; &amp;&amp; layers[j]-&gt;type == &quot;ConvolutionDepthWise&quot;)
+    &#123;
+        ncnn::Convolution* convolution1 = (ncnn::Convolution*)layers[i];
+        ncnn::ConvolutionDepthWise* convolution2 = (ncnn::ConvolutionDepthWise*)layers[j];
+
+        if (convolution1-&gt;weight_data.elemsize != 1u || convolution2-&gt;weight_data.elemsize != 1u)
+            continue;
+
+        convolution1-&gt;int8_scale_term += 100;
+        convolution1-&gt;top_blob_int8_scales = convolution2-&gt;bottom_blob_int8_scales;
+    &#125;
+    if (layers[i]-&gt;type == &quot;ConvolutionDepthWise&quot; &amp;&amp; layers[j]-&gt;type == &quot;Convolution&quot;)
+    &#123;
+        ncnn::ConvolutionDepthWise* convolution1 = (ncnn::ConvolutionDepthWise*)layers[i];
+        ncnn::Convolution* convolution2 = (ncnn::Convolution*)layers[j];
+
+        if (convolution1-&gt;weight_data.elemsize != 1u || convolution2-&gt;weight_data.elemsize != 1u)
+            continue;
+
+        convolution1-&gt;int8_scale_term += 100;
+        convolution1-&gt;top_blob_int8_scales = convolution2-&gt;bottom_blob_int8_scales;
+    &#125;
+    if (layers[i]-&gt;type == &quot;ConvolutionDepthWise&quot; &amp;&amp; layers[j]-&gt;type == &quot;ConvolutionDepthWise&quot;)
+    &#123;
+        ncnn::ConvolutionDepthWise* convolution1 = (ncnn::ConvolutionDepthWise*)layers[i];
+        ncnn::ConvolutionDepthWise* convolution2 = (ncnn::ConvolutionDepthWise*)layers[j];
+
+        if (convolution1-&gt;weight_data.elemsize != 1u || convolution2-&gt;weight_data.elemsize != 1u)
+            continue;
+
+        convolution1-&gt;int8_scale_term += 100;
+        convolution1-&gt;top_blob_int8_scales = convolution2-&gt;bottom_blob_int8_scales;
+    &#125;
+&#125;
+//然后就是另一种使用dequantize的情况
+for (size_t i = 0; i &lt; layer_count; i++)
+&#123;
+//首先第一层是卷积或者ConvolutionDepthWise
+    if (layers[i]-&gt;type != &quot;Convolution&quot; &amp;&amp; layers[i]-&gt;type != &quot;ConvolutionDepthWise&quot;)
+        continue;
+
+    // Convolution/ConvolutionDepthWise - Split - Convolution/ConvolutionDepthWise
+    int top_blob_index = layers[i]-&gt;tops[0];
+
+    size_t j = i + 1;
+    //然后找下一层
+    for (; j &lt; layer_count; j++)
+    &#123;
+        //ncnn中的split的操作是将一个输入复制多份。。产生多个分支
+        //下一层是split层
+        if (layers[j]-&gt;type != &quot;Split&quot;)
+            continue;
+        //split的输入特征矩阵只有一个
+        if (layers[j]-&gt;bottoms.size() != 1)
+            continue;
+        //且这个输入就是上面层次的输出
+        if (layers[j]-&gt;bottoms[0] == top_blob_index)
+            break;
+    &#125;
+    //如果j表示整个网络的最后一层，跳出此次循环
+    if (j == layer_count)
+        continue;
+
+    ncnn::Split* split = (ncnn::Split*)layers[j];
+
+    bool all_conv = true;
+    //遍历split产生的每一个输出层
+    for (size_t p = 0; p &lt; split-&gt;tops.size(); p++)
+    &#123;
+        //提取对应blob的索引
+        int split_top_blob_index = split-&gt;tops[p];
+        //定位到当前blob的下一层
+        size_t k = j + 1;
+        //然后遍历后序层次
+        for (; k &lt; layer_count; k++)
+        &#123;
+            //还是要找卷积和ConvolutionDepthWise
+            if (layers[k]-&gt;type != &quot;Convolution&quot; &amp;&amp; layers[k]-&gt;type != &quot;ConvolutionDepthWise&quot;)
+                continue;
+
+            if (layers[k]-&gt;bottoms.size() != 1)
+                continue;
+            //实际上就是split分支后面的卷积或ConvolutionDepthWise
+            if (layers[k]-&gt;bottoms[0] == split_top_blob_index)
+                break;
+        &#125;
+
+        if (k == layer_count)
+        &#123;
+            all_conv = false;
+            break;
+        &#125;
+        //判断权重是不是都是int8
+        if (layers[k]-&gt;type == &quot;Convolution&quot;)
+        &#123;
+            ncnn::Convolution* convolution = (ncnn::Convolution*)layers[k];
+            if (convolution-&gt;weight_data.elemsize != 1u)
+            &#123;
+                all_conv = false;
+                break;
+            &#125;
+        &#125;
+        if (layers[k]-&gt;type == &quot;ConvolutionDepthWise&quot;)
+        &#123;
+            ncnn::ConvolutionDepthWise* convolution = (ncnn::ConvolutionDepthWise*)layers[k];
+            if (convolution-&gt;weight_data.elemsize != 1u)
+            &#123;
+                all_conv = false;
+                break;
+            &#125;
+        &#125;
+    &#125;
+
+    if (!all_conv)
+        continue;
+    //consumer表示需要这个blob作为输入的层次的索引
+    j = blobs[split-&gt;tops[0]].consumer;
+
+    // fuse requantize
+    //实现层次融合，具体逻辑和操作跟前面的差不多
+    fprintf(stderr, &quot;fuse_requantize %s %s\n&quot;, layers[i]-&gt;name.c_str(), split-&gt;name.c_str());
+
+    if (layers[i]-&gt;type == &quot;Convolution&quot; &amp;&amp; layers[j]-&gt;type == &quot;Convolution&quot;)
+    &#123;
+        ncnn::Convolution* convolution1 = (ncnn::Convolution*)layers[i];
+        ncnn::Convolution* convolution2 = (ncnn::Convolution*)layers[j];
+
+        if (convolution1-&gt;weight_data.elemsize != 1u || convolution2-&gt;weight_data.elemsize != 1u)
+            continue;
+
+        convolution1-&gt;int8_scale_term += 100;
+        convolution1-&gt;top_blob_int8_scales = convolution2-&gt;bottom_blob_int8_scales;
+    &#125;
+    if (layers[i]-&gt;type == &quot;Convolution&quot; &amp;&amp; layers[j]-&gt;type == &quot;ConvolutionDepthWise&quot;)
+    &#123;
+        ncnn::Convolution* convolution1 = (ncnn::Convolution*)layers[i];
+        ncnn::ConvolutionDepthWise* convolution2 = (ncnn::ConvolutionDepthWise*)layers[j];
+
+        if (convolution1-&gt;weight_data.elemsize != 1u || convolution2-&gt;weight_data.elemsize != 1u)
+            continue;
+
+        convolution1-&gt;int8_scale_term += 100;
+        convolution1-&gt;top_blob_int8_scales = convolution2-&gt;bottom_blob_int8_scales;
+    &#125;
+    if (layers[i]-&gt;type == &quot;ConvolutionDepthWise&quot; &amp;&amp; layers[j]-&gt;type == &quot;Convolution&quot;)
+    &#123;
+        ncnn::ConvolutionDepthWise* convolution1 = (ncnn::ConvolutionDepthWise*)layers[i];
+        ncnn::Convolution* convolution2 = (ncnn::Convolution*)layers[j];
+
+        if (convolution1-&gt;weight_data.elemsize != 1u || convolution2-&gt;weight_data.elemsize != 1u)
+            continue;
+
+        convolution1-&gt;int8_scale_term += 100;
+        convolution1-&gt;top_blob_int8_scales = convolution2-&gt;bottom_blob_int8_scales;
+    &#125;
+    if (layers[i]-&gt;type == &quot;ConvolutionDepthWise&quot; &amp;&amp; layers[j]-&gt;type == &quot;ConvolutionDepthWise&quot;)
+    &#123;
+        ncnn::ConvolutionDepthWise* convolution1 = (ncnn::ConvolutionDepthWise*)layers[i];
+        ncnn::ConvolutionDepthWise* convolution2 = (ncnn::ConvolutionDepthWise*)layers[j];
+
+        if (convolution1-&gt;weight_data.elemsize != 1u || convolution2-&gt;weight_data.elemsize != 1u)
+            continue;
+
+        convolution1-&gt;int8_scale_term += 100;
+        convolution1-&gt;top_blob_int8_scales = convolution2-&gt;bottom_blob_int8_scales;
+    &#125;
+&#125;
+
+return 0;
+&#125;</code></pre>
+<p>&ensp;&ensp;上面的过程中，requantize的使用用在连续的conv和ConvolutionDepthWise或者连续的conv,ConvolutionDepthWise和split之后的conv,ConvolutionDepthWise之间，将后面一层输入的量化参数写入前一层的top_blob_int8_scales中，然后在前向传播中进行requantize的计算，这个过程对于requantize的实现不是很直观，再看一下src/layer/requantize.cpp中的相应实现：</p>
+<pre><code>int Requantize::forward(const Mat&amp; bottom_blob, Mat&amp; top_blob, const Option&amp; opt) const
+&#123;
+int dims = bottom_blob.dims;
+
+......
+//看一下dim==3的时候
+
+if (dims == 3)
+&#123;
+    int w = bottom_blob.w;
+    int h = bottom_blob.h;
+    int channels = bottom_blob.c;
+    int size = w * h;
+
+    top_blob.create(w, h, channels, (size_t)1u, opt.blob_allocator);
+    if (top_blob.empty())
+        return -100;
+    //没有偏置的情况
+    if (bias_data_size == 0)
+    &#123;
+        #pragma omp parallel for num_threads(opt.num_threads)
+        for (int q = 0; q &lt; channels; q++)
+        &#123;
+            const int* intptr = bottom_blob.channel(q);
+            signed char* ptr = top_blob.channel(q);
+
+            const float scale_in = scale_in_data_size == 1 ? scale_in_data[0] : scale_in_data[q];
+            const float scale_out = scale_out_data_size == 1 ? scale_out_data[0] : scale_out_data[q];
+
+            for (int i = 0; i &lt; size; i++)
+            &#123;
+                //主要就是这里了，注意这里的inptr[i]是int32的值，scale_in就是int32到fp32的反量化参数
+                //这里实际上就是int8_weights跟int8_input的点积结果
+                float v = intptr[i] * scale_in;
+                //然后直接得到下一层的int8的输入，scale_out是下一层输入的量化参数
+                ptr[i] = float2int8(activation_ss(v, activation_type, activation_params) * scale_out);
+            &#125;
+        &#125;
+    &#125;
+    else
+    &#123;
+        #pragma omp parallel for num_threads(opt.num_threads)
+        for (int q = 0; q &lt; channels; q++)
+        &#123;
+            const int* intptr = bottom_blob.channel(q);
+            signed char* ptr = top_blob.channel(q);
+
+            const float scale_in = scale_in_data_size == 1 ? scale_in_data[0] : scale_in_data[q];
+            const float scale_out = scale_out_data_size == 1 ? scale_out_data[0] : scale_out_data[q];
+            const float bias = bias_data_size == 1 ? bias_data[0] : bias_data[q];
+
+            for (int i = 0; i &lt; size; i++)
+            &#123;
+                //存在偏置的时候也差不多
+                //数学公式就是：conv2_input(int8) =activation(conv1_inner(int32)*scale_in+biases)*scale_out
+                //这样就能将激活直接融合进俩层之间，同时减少了一次fp32的内存读写，没有直接存储conv1反量化的fp32结果，conv2减少一次读取fp32的操作
+                float v = intptr[i] * scale_in + bias;
+                ptr[i] = float2int8(activation_ss(v, activation_type, activation_params) * scale_out);
+            &#125;
+        &#125;
+    &#125;
+&#125;
+
+return 0;
+&#125;
+
+&#125; // namespace ncnn</code></pre>
+<p>&ensp;&ensp;具体的调用参考src/layer/arm/convlution_arm.cpp中的流程：</p>
+<pre><code>int Convolution_arm::forward_int8_arm(const Mat&amp; bottom_blob, Mat&amp; top_blob, const Option&amp; opt) const</code></pre>
+<p>{<br>    int elembits = bottom_blob.elembits();</p>
+<pre><code>Mat bottom_blob_int8 = bottom_blob;
+//这里将确保输入特征矩阵是int8
+if (elembits != 8)
+&#123;
+    Option opt_q = opt;
+    opt_q.blob_allocator = opt.workspace_allocator;
+    //不是的化就进行int8量化
+    quantize_to_int8(bottom_blob, bottom_blob_int8, bottom_blob_int8_scales, opt_q);
+&#125;
+
+//     NCNN_LOGE(&quot;Convolution_arm input %d x %d  ksize=%d %d  stride=%d %d&quot;, w, h, kernel_w, kernel_h, stride_w, stride_h);
+
+Mat bottom_blob_bordered;
+make_padding(bottom_blob_int8, bottom_blob_bordered, opt);
+if (bottom_blob_bordered.empty())
+    return -100;
+
+int w = bottom_blob_bordered.w;
+int h = bottom_blob_bordered.h;
+int elempack = bottom_blob_bordered.elempack;
+size_t elemsize = bottom_blob_bordered.elemsize;
+
+const int kernel_extent_w = dilation_w * (kernel_w - 1) + 1;
+const int kernel_extent_h = dilation_h * (kernel_h - 1) + 1;
+
+int outw = (w - kernel_extent_w) / stride_w + 1;
+int outh = (h - kernel_extent_h) / stride_h + 1;
+
+int out_elempack = 1;
+__ARM_NEON
+if (opt.use_packing_layout)
+&#123;
+    out_elempack = num_output % 8 == 0 ? 8 : 1;
+&#125;
+if // __ARM_NEON
+bool use_int8_requantize = int8_scale_term &gt; 100;
+size_t out_elemsize = use_int8_requantize ? 1u * out_elempack : 4u * out_elempack;
+__ARM_FEATURE_FP16_VECTOR_ARITHMETIC
+if (opt.use_fp16_storage)
+&#123;
+    out_elemsize = use_int8_requantize ? 1u * out_elempack : 2u * out_elempack;
+&#125;
+if
+if (opt.use_bf16_storage)
+    out_elemsize = use_int8_requantize ? 1u * out_elempack : 2u * out_elempack;
+
+//     NCNN_LOGE(&quot;forward_int8_arm %d %d %d    %d %d&quot;, w, h, bottom_blob_bordered.c, elempack, out_elempack);
+
+top_blob.create(outw, outh, num_output / out_elempack, out_elemsize, out_elempack, opt.blob_allocator);
+if (top_blob.empty())
+    return -100;
+
+__ARM_NEON
+if (elempack == 8 &amp;&amp; out_elempack == 8)
+&#123;
+//创建int32矩阵存储对应的中间值
+    Mat top_blob_int32;
+    top_blob_int32.create(outw, outh, num_output / out_elempack, (size_t)(4u * out_elempack), out_elempack, opt.workspace_allocator);
+    if (top_blob_int32.empty())
+        return -100;
+    //卷积计算，得到int32的点积结果
+    convolution_pack8_int8_neon(bottom_blob_bordered, top_blob_int32, weight_data_int8, kernel_w, kernel_h, dilation_w, dilation_h, stride_w, stride_h, opt);
+
+    Mat scale_in_data(num_output);
+    for (int p = 0; p &lt; num_output; p++)
+    &#123;
+        // requantize and relu
+        float scale_in;
+        if (weight_data_int8_scales[p] == 0)
+            scale_in = 0;
+        else
+            scale_in = 1.f / (bottom_blob_int8_scales[0] * weight_data_int8_scales[p]);
+
+        scale_in_data[p] = scale_in;
+    &#125;
+
+    if (use_int8_requantize)
+    &#123;
+        //requantize的实现，直接得到下一层的int8输入
+        requantize_from_int32_to_int8(top_blob_int32, top_blob, scale_in_data, top_blob_int8_scales, bias_data, activation_type, activation_params, opt);
+    &#125;
+    else
+    &#123;
+        dequantize_from_int32(top_blob_int32, top_blob, scale_in_data, bias_data, opt);
+
+        if (activation)
+        &#123;
+            activation-&gt;forward_inplace(top_blob, opt);
+        &#125;
+    &#125;
+
+......
+&#125;
+//调用requantize.cpp中的实现
+void requantize_from_int32_to_int8(const Mat&amp; src, Mat&amp; dst, const Mat&amp; scale_in_data, const Mat&amp; scale_out_data, const Mat&amp; bias_data, int activation_type, const Mat&amp; activation_params, const Option&amp; opt)
+&#123;
+Layer* requantize = create_layer(LayerType::Requantize);
+
+ParamDict pd;
+pd.set(0, scale_in_data.w);
+pd.set(1, scale_out_data.w);
+pd.set(2, bias_data.w);
+pd.set(3, activation_type);
+pd.set(4, activation_params);
+
+requantize-&gt;load_param(pd);
+
+Mat weights[3];
+weights[0] = scale_in_data;
+weights[1] = scale_out_data;
+weights[2] = bias_data;
+
+requantize-&gt;load_model(ModelBinFromMatArray(weights));
+
+requantize-&gt;create_pipeline(opt);
+
+requantize-&gt;forward(src, dst, opt);
+
+requantize-&gt;destroy_pipeline(opt);
+
+delete requantize;
+&#125;</code></pre>
+<p>&ensp;&ensp;关于requantize的实现，使用情况，调用流程，优点基本上就讲完了，再回到ncnn2int8.cpp中的得到int8模型的最后一步，保存成params和bin文件，这里需要注意的地方不多，基本上就是按照格式去写，注意一下这里采用和requantize，所以有些层次需要把top_int8_scales也写入bin文件中：</p>
+<pre><code>int NetQuantize::save(const char* parampath, const char* binpath)&#123;
+    ......
+    //只看一小段
+    else if (layer-&gt;type == &quot;Convolution&quot;)
+    &#123;
+        ncnn::Convolution* op = (ncnn::Convolution*)layer;
+        ncnn::Convolution* op_default = (ncnn::Convolution*)layer_default;
+
+        fprintf_param_value(&quot; 0=%d&quot;, num_output)
+        fprintf_param_value(&quot; 1=%d&quot;, kernel_w)
+        &#123;
+            if (op-&gt;kernel_h != op-&gt;kernel_w) fprintf(pp, &quot; 11=%d&quot;, op-&gt;kernel_h);
+        &#125;
+        fprintf_param_value(&quot; 2=%d&quot;, dilation_w)
+        &#123;
+            if (op-&gt;dilation_h != op-&gt;dilation_w) fprintf(pp, &quot; 12=%d&quot;, op-&gt;dilation_h);
+        &#125;
+        fprintf_param_value(&quot; 3=%d&quot;, stride_w)
+        &#123;
+            if (op-&gt;stride_h != op-&gt;stride_w) fprintf(pp, &quot; 13=%d&quot;, op-&gt;stride_h);
+        &#125;
+        fprintf_param_value(&quot; 4=%d&quot;, pad_left)
+        &#123;
+            if (op-&gt;pad_top != op-&gt;pad_left) fprintf(pp, &quot; 14=%d&quot;, op-&gt;pad_top);
+        &#125;
+        &#123;
+            if (op-&gt;pad_right != op-&gt;pad_left) fprintf(pp, &quot; 15=%d&quot;, op-&gt;pad_right);
+        &#125;
+        &#123;
+            if (op-&gt;pad_bottom != op-&gt;pad_top) fprintf(pp, &quot; 16=%d&quot;, op-&gt;pad_bottom);
+        &#125;
+        fprintf_param_value(&quot; 5=%d&quot;, bias_term)
+        fprintf_param_value(&quot; 6=%d&quot;, weight_data_size)
+        fprintf_param_value(&quot; 8=%d&quot;, int8_scale_term)
+        fprintf_param_value(&quot; 9=%d&quot;, activation_type)
+        &#123;
+            if (!op-&gt;activation_params.empty()) fprintf_param_float_array(10, op-&gt;activation_params, pp);
+        &#125;
+
+        fwrite_weight_tag_data(0, op-&gt;weight_data, bp);
+        fwrite_weight_data(op-&gt;bias_data, bp);
+
+        // write int8_scale data
+        //写入int8的量化参数
+        if (op-&gt;int8_scale_term)
+        &#123;
+            fwrite_weight_data(op-&gt;weight_data_int8_scales, bp);
+            fwrite_weight_data(op-&gt;bottom_blob_int8_scales, bp);
+            fwrite_weight_data(op-&gt;top_blob_int8_scales, bp);
+        &#125;
+    &#125;
+    else if (layer-&gt;type == &quot;ConvolutionDepthWise&quot;)
+
+    ......
+
+&#125;</code></pre>
+<p>&ensp;&ensp;基本上ncnn中的int8量化内容就看完了，然后再看一下NCNN中bf16的推理实现流程，首先是判断是否启用bf16推理，实现在src/layer/arm/convolution_arm.cpp中：</p>
+<pre><code>int Convolution_arm::create_pipeline(const Option&amp; opt)
+&#123;
+......
+if (opt.use_bf16_storage)
+&#123;
+    return create_pipeline_bf16s(opt);
+&#125;
+......
+
+&#125;</code></pre>
+<p>&ensp;&ensp;启用bf16推理之后创建对应的pipeline，同时完成权重的fp32到bf16的转换:</p>
+<pre><code>int Convolution_arm::create_pipeline_bf16s(const Option&amp; opt)
+&#123;
+//这里的maxk是卷积核一个通道上的数据量
+const int maxk = kernel_w * kernel_h;
+//num_input是当前层的输出通道数，也是卷积核个数
+const int num_input = weight_data_size / maxk / num_output;
+//elempack和output_elempack记录输入和输出通道的pack值
+//这里的elempack是表示是否对数据进行打包。
+//对输入和输出数据根据通道维度一个数据包包含多少个通道中的值
+int elempack = (support_packing &amp;&amp; opt.use_packing_layout &amp;&amp; num_input % 4 == 0) ? 4 : 1;
+int out_elempack = (support_packing &amp;&amp; opt.use_packing_layout &amp;&amp; num_output % 4 == 0) ? 4 : 1;
+
+
+// pack1
+//这里看一下pack都是1的实现，也就是不打包数据的实现
+if (elempack == 1 &amp;&amp; out_elempack == 1)
+&#123;
+    if (kernel_w == 1 &amp;&amp; kernel_h == 1 &amp;&amp; dilation_w == 1 &amp;&amp; dilation_h == 1 &amp;&amp; stride_w == 1 &amp;&amp; stride_h == 1)
+    &#123;
+        conv1x1s1_sgemm_transform_kernel_bf16s_neon(weight_data, weight_data_bf16, num_input, num_output);
+    &#125;
+    else
+    &#123;
+        //这里实现的是将fp32的权重转换成bf16的权重数据
+        ncnn::cast_float32_to_bfloat16(weight_data, weight_data_bf16, opt);
+    &#125;
+&#125;
+
+return 0;
+&#125;
+
+void cast_float32_to_bfloat16(const Mat&amp; src, Mat&amp; dst, const Option&amp; opt)
+&#123;
+//通过一个cast层实现fp32到bf16的转换
+Layer* cast = create_layer(LayerType::Cast);
+
+ParamDict pd;
+//设置全换类型从type1--&gt;type4
+pd.set(0, 1);
+pd.set(1, 4);
+
+cast-&gt;load_param(pd);
+
+cast-&gt;create_pipeline(opt);
+//转换的实现
+cast-&gt;forward(src, dst, opt);
+
+cast-&gt;destroy_pipeline(opt);
+
+delete cast;
+&#125;
+
+int Cast::forward(const Mat&amp; bottom_blob, Mat&amp; top_blob, const Option&amp; opt) const
+&#123;
+//实现fp32到bf16的转换，实际上就是type1到type4的转换
+if (type_from == type_to)
+&#123;
+    top_blob = bottom_blob;
+    return 0;
+&#125;
+//提取相应的输入数据的维度等参数
+int w = bottom_blob.w;
+int h = bottom_blob.h;
+int channels = bottom_blob.c;
+//dims表示输入数据的维度，也就是fp32权重的维度
+int dims = bottom_blob.dims;
+//elemsize:float32/int32 : 4;float16:2;int8/uint8:1;empty :0;
+size_t elemsize = bottom_blob.elemsize;
+//elempack表示权重里面一个数据包中元素的个数，对权重矩阵进行打包存储
+int elempack = bottom_blob.elempack;
+
+//这里是从fp32到bf16的转换
+size_t out_elemsize = elemsize;
+if (type_to == 1)
+&#123;
+    // float32
+    out_elemsize = 4 * elempack;
+&#125;
+else if (type_to == 2)
+&#123;
+    // float16
+    out_elemsize = 2 * elempack;
+&#125;
+else if (type_to == 3)
+&#123;
+    // int8
+    out_elemsize = elempack;
+&#125;
+else if (type_to == 4)
+&#123;
+    // bfloat16
+    //用的是这个,原来的是fp32的值，elempack是4
+    out_elemsize = 2 * elempack;
+&#125;
+
+if (dims == 1)
+&#123;
+    top_blob.create(w, out_elemsize, elempack, opt.blob_allocator);
+&#125;
+else if (dims == 2)
+&#123;
+    top_blob.create(w, h, out_elemsize, elempack, opt.blob_allocator);
+&#125;
+else if (dims == 3)
+&#123;
+    //权重的维度是[w,h,c],创建相应的存储输出bf16权重的矩阵
+    top_blob.create(w, h, channels, out_elemsize, elempack, opt.blob_allocator);
+&#125;
+if (top_blob.empty())
+    return -100;
+//这里size是一个channel上的数据量，这个跟数据打包有关系，当dims是3，bottom_blob的维度实际上应该是[w,h,c*elempack]，具体的打包规则参考ncnn/docs/developer-guide/element-packing.md中的介绍，这里实际上可以忽略打包的内容，只看一下bf16的推理过程
+int size = w * h * elempack;
+
+if (type_from == 1 &amp;&amp; type_to == 2)
+&#123;
+    #pragma omp parallel for num_threads(opt.num_threads)
+    for (int q = 0; q &lt; channels; q++)
+    &#123;
+        const float* ptr = bottom_blob.channel(q);
+        unsigned short* outptr = top_blob.channel(q);
+
+        for (int i = 0; i &lt; size; i++)
+        &#123;
+            outptr[i] = float32_to_float16(ptr[i]);
+        &#125;
+    &#125;
+&#125;
+
+if (type_from == 2 &amp;&amp; type_to == 1)
+&#123;
+    #pragma omp parallel for num_threads(opt.num_threads)
+    for (int q = 0; q &lt; channels; q++)
+    &#123;
+        const unsigned short* ptr = bottom_blob.channel(q);
+        float* outptr = top_blob.channel(q);
+
+        for (int i = 0; i &lt; size; i++)
+        &#123;
+            outptr[i] = float16_to_float32(ptr[i]);
+        &#125;
+    &#125;
+&#125;
+
+if (type_from == 3 &amp;&amp; type_to == 1)
+&#123;
+    #pragma omp parallel for num_threads(opt.num_threads)
+    for (int q = 0; q &lt; channels; q++)
+    &#123;
+        const signed char* ptr = bottom_blob.channel(q);
+        float* outptr = top_blob.channel(q);
+
+        for (int i = 0; i &lt; size; i++)
+        &#123;
+            outptr[i] = (float)ptr[i];
+        &#125;
+    &#125;
+&#125;
+
+if (type_from == 1 &amp;&amp; type_to == 4)
+&#123;
+    #pragma omp parallel for num_threads(opt.num_threads)
+    for (int q = 0; q &lt; channels; q++)
+    &#123;
+        const float* ptr = bottom_blob.channel(q);
+        unsigned short* outptr = top_blob.channel(q);
+        //循环读取每一个fp32的值，转换成bf16
+        for (int i = 0; i &lt; size; i++)
+        &#123;
+            outptr[i] = float32_to_bfloat16(ptr[i]);
+        &#125;
+    &#125;
+&#125;
+
+if (type_from == 4 &amp;&amp; type_to == 1)
+&#123;
+    #pragma omp parallel for num_threads(opt.num_threads)
+    for (int q = 0; q &lt; channels; q++)
+    &#123;
+        const unsigned short* ptr = bottom_blob.channel(q);
+        float* outptr = top_blob.channel(q);
+
+        for (int i = 0; i &lt; size; i++)
+        &#123;
+            outptr[i] = bfloat16_to_float32(ptr[i]);
+        &#125;
+    &#125;
+&#125;
+
+// TODO more cast type
+
+return 0;
+&#125;
+
+&#125; // namespace ncnn
+
+
+NCNN_EXPORT inline unsigned short float32_to_bfloat16(float value)
+&#123;
+// 16 : 16
+#通过一个union结构和移位操作实现fp32和bf16间的转换
+union
+&#123;
+    //这里用unsign int表示bf16的值
+    //这里的union中实际上用的是同一段内存，输入是fp32，所以转换成bf16的时候用同是32位的unsigned int，而fp32跟bf16的整数部分是一样的，只是小数部分不一样，也就是将fp32右移16位舍去部分小数位就成了bf16
+    //fp32是4字节32位，一位符号位，8位指数，23位小数，bf32则是一位符号位，8位指数，7位小数
+    //fp16是一位符号位，5位指数，10位小数
+    unsigned int u;
+    float f;
+&#125; tmp;
+tmp.f = value;
+//也就是通过unsigned int 的右移保证了舍去的是小数部分
+return tmp.u &gt;&gt; 16;
+
+&#125;</code></pre>
+<p>&ensp;&ensp;关于fp32和bf16的区别<a target="_blank" rel="noopener" href="https://zhuanlan.zhihu.com/p/351297472">参考这里。</a>接下来就是前像传播的计算过程了，还是在convlution_arm.cpp中的实现：</p>
+<pre><code>int Convolution_arm::forward_bf16s(const Mat&amp; bottom_blob, Mat&amp; top_blob, const Option&amp; opt) const
+&#123;
+//只看一下bf16的前向推理过程
+int w = bottom_blob.w;
+int h = bottom_blob.h;
+int channels = bottom_blob.c;
+size_t elemsize = bottom_blob.elemsize;
+int elempack = bottom_blob.elempack;
+
+//     NCNN_LOGE(&quot;Convolution input %d x %d  pad = %d %d  ksize=%d %d  stride=%d %d&quot;, w, h, pad_w, pad_h, kernel_w, kernel_h, stride_w, stride_h);
+
+const int kernel_extent_w = dilation_w * (kernel_w - 1) + 1;
+const int kernel_extent_h = dilation_h * (kernel_h - 1) + 1;
+
+Mat bottom_blob_bordered;
+make_padding(bottom_blob, bottom_blob_bordered, opt);
+if (bottom_blob_bordered.empty())
+    return -100;
+
+w = bottom_blob_bordered.w;
+h = bottom_blob_bordered.h;
+
+int outw = (w - kernel_extent_w) / stride_w + 1;
+int outh = (h - kernel_extent_h) / stride_h + 1;
+int out_elempack = (support_packing &amp;&amp; opt.use_packing_layout &amp;&amp; num_output % 4 == 0) ? 4 : 1;
+size_t out_elemsize = elemsize / elempack * out_elempack;
+
+top_blob.create(outw, outh, num_output / out_elempack, out_elemsize, out_elempack, opt.blob_allocator);
+if (top_blob.empty())
+    return -100;
+
+// TODO dilated conv for bf16s
+//     if ((!support_packing || !opt.use_packing_layout) &amp;&amp; kernel_w == kernel_h &amp;&amp; dilation_w != 1 &amp;&amp; dilation_h == dilation_w &amp;&amp; stride_w == 1 &amp;&amp; stride_h == 1)
+//     &#123;
+//         return forwardDilation_arm(bottom_blob_bordered, top_blob, opt);
+//     &#125;
+
+
+if (elempack == 1 &amp;&amp; out_elempack == 1)
+&#123;
+    if (kernel_w == 1 &amp;&amp; kernel_h == 1 &amp;&amp; dilation_w == 1 &amp;&amp; dilation_h == 1 &amp;&amp; stride_w == 1 &amp;&amp; stride_h == 1)
+    &#123;
+        conv1x1s1_sgemm_bf16s_neon(bottom_blob_bordered, top_blob, weight_data_bf16, bias_data, opt);
+
+        if (activation)
+        &#123;
+            activation-&gt;forward_inplace(top_blob, opt);
+        &#125;
+    &#125;
+    else
+    &#123;
+        //进行bf16的卷积计算，这里的参宿和能看出，权重矩阵用的是前面转换好的weight_data_bf16
+        convolution_bf16s(bottom_blob_bordered, top_blob, weight_data_bf16, bias_data, kernel_w, kernel_h, dilation_w, dilation_h, stride_w, stride_h, activation_type, activation_params, opt);
+    &#125;
+&#125;
+
+return 0;&#125;
+
+
+static void convolution_bf16s(const Mat&amp; bottom_blob, Mat&amp; top_blob, const Mat&amp; weight_data_bf16, const Mat&amp; bias_data, int kernel_w, int kernel_h, int dilation_w, int dilation_h, int stride_w, int stride_h, int activation_type, const Mat&amp; activation_params, const Option&amp; opt)
+&#123;
+//bf16的卷积计算
+int w = bottom_blob.w;
+int channels = bottom_blob.c;
+
+int outw = top_blob.w;
+int outh = top_blob.h;
+int outch = top_blob.c;
+
+const int maxk = kernel_w * kernel_h;
+
+// kernel offsets
+std::vector&lt;int&gt; _space_ofs(maxk);
+//调整了一下权重的指针排布
+int* space_ofs = &amp;_space_ofs[0];
+&#123;
+    int p1 = 0;
+    int p2 = 0;
+    int gap = w * dilation_h - kernel_w * dilation_w;
+    for (int i = 0; i &lt; kernel_h; i++)
+    &#123;
+        for (int j = 0; j &lt; kernel_w; j++)
+        &#123;
+            space_ofs[p1] = p2;
+            p1++;
+            p2 += dilation_w;
+        &#125;
+        p2 += gap;
+    &#125;
+&#125;
+//定位偏置指针，偏置是fp32
+const float* bias_data_ptr = bias_data;
+
+// num_output
+#pragma omp parallel for num_threads(opt.num_threads)
+//并行处理
+for (int p = 0; p &lt; outch; p++)
+&#123;
+    unsigned short* outptr = top_blob.channel(p);
+
+    for (int i = 0; i &lt; outh; i++)
+    &#123;
+        for (int j = 0; j &lt; outw; j++)
+        &#123;
+            float sum = 0.f;
+
+            if (bias_data_ptr)
+            &#123;
+                sum = bias_data_ptr[p];
+            &#125;
+            //定位相应的bf16权重指针
+            //这里定位bf16用的是unsigned short，是因为bf16本身只有2个字节，跟unsigned short（2字节16位）一致，从fp32舍去小数的16位，这个时候调用就通过unsign short即可，跟转换的时候有差别
+            const unsigned short* kptr = (const unsigned short*)weight_data_bf16 + maxk * channels * p;
+
+            // channels
+            //遍历不同输入通道
+            for (int q = 0; q &lt; channels; q++)
+            &#123;
+                //提取参与计算的输入数据
+                const Mat m = bottom_blob.channel(q);
+                const unsigned short* sptr = m.row&lt;unsigned short&gt;(i * stride_h) + j * stride_w;
+
+                for (int k = 0; k &lt; maxk; k++)
+                &#123;
+                    //真正的计算还是将bf16的权重和输入转换成fp32进行
+                    float val = bfloat16_to_float32(sptr[space_ofs[k]]);
+                    float wt = bfloat16_to_float32(kptr[k]);
+                    sum += val * wt;
+                &#125;
+
+                kptr += maxk;
+            &#125;
+            //fp32进行激活
+            if (activation_type == 1)
+            &#123;
+                sum = std::max(sum, 0.f);
+            &#125;
+            else if (activation_type == 2)
+            &#123;
+                float slope = activation_params[0];
+                sum = sum &gt; 0.f ? sum : sum * slope;
+            &#125;
+            else if (activation_type == 3)
+            &#123;
+                float min = activation_params[0];
+                float max = activation_params[1];
+                if (sum &lt; min)
+                    sum = min;
+                if (sum &gt; max)
+                    sum = max;
+            &#125;
+            else if (activation_type == 4)
+            &#123;
+                sum = static_cast&lt;float&gt;(1.f / (1.f + exp(-sum)));
+            &#125;
+            else if (activation_type == 5)
+            &#123;
+                sum = static_cast&lt;float&gt;(sum * tanh(log(exp(sum) + 1.f)));
+            &#125;
+            //输出转换成bf16
+            outptr[j] = float32_to_bfloat16(sum);
+        &#125;
+
+        outptr += outw;
+    &#125;
+&#125;
+&#125;</code></pre>
+<p>&ensp;&ensp;从上面的计算过程能看出，bf16加速实际上权重的存储是转换成bf16,输入的特征矩阵也是bf16，但是卷积计算是将bf16转换成fp32进行计算，然后将激活输出转换成bf16作为下一层的输入。<br>&ensp;&ensp;fp16的加速过程和上面的bf16类似，实现的流程是一致的，差别是fp32和fp16的权重转换，前向传播的计算，输入权重是fp16,输入特征矩阵也是fp16，偏置是fp32，计算的时候也是将输入特征和权重转到fp32计算，然后对将激活输出转成fp16传递到下一层。看一下fp32到fp16的转换：</p>
+<pre><code>unsigned short float32_to_float16(float value)
+&#123;
+// 1 : 8 : 23，fp32的位数划分
+union
+&#123;
+    unsigned int u;
+    float f;
+&#125; tmp;
+
+tmp.f = value;
+
+// 1 : 8 : 23
+//sign抽取fp32的符号位，得到的16位值低位第一位就是原fp16的符号位
+unsigned short sign = (tmp.u &amp; 0x80000000) &gt;&gt; 31;
+//exponent抽取fp32的指数位置，8位指数位，得到的16位值，低8位是fp32的8位指数位的值
+unsigned short exponent = (tmp.u &amp; 0x7F800000) &gt;&gt; 23;
+//significand抽取小数位23位，得到的32位值，低位23位就是原fp32的23位小数位
+unsigned int significand = tmp.u &amp; 0x7FFFFF;
+
+//     NCNN_LOGE(&quot;%d %d %d&quot;, sign, exponent, significand);
+
+// 1 : 5 : 10
+//生成fp16的值
+unsigned short fp16;
+//如果fp32指数为全0，则要么是0，或者说本身就是一个无穷小的数，转到fp16会发生下溢出
+if (exponent == 0)
+&#123;
+    // zero or denormal, always underflow
+    //这个时候保留符号位，其余位置都是0
+    fp16 = (sign &lt;&lt; 15) | (0x00 &lt;&lt; 10) | 0x00;
+&#125;
+//如果fp32指数位置8位全1，则fp16一定会上溢出，本身可能就是一个无穷大的数
+else if (exponent == 0xFF)
+&#123;
+    // infinity or NaN
+    //此时保留符号位和fp32指数位5位全1，小数位不为0的话取0x200(也就是小数位第一位取1，其余9位是0)，否则取0
+    fp16 = (sign &lt;&lt; 15) | (0x1F &lt;&lt; 10) | (significand ? 0x200 : 0x00);
+&#125;
+else
+//正常的fp32值
+&#123;
+    // normalized
+    //short类型根据编译器的不同有差别，但是不会低于16位
+    //这里的(-127+15)是因为在浮点数的表示中，8位指数既要有负指数，也要有正指数，所以通常指数位的值exponent要减去127的偏移，实现正负指数的表示，这里的exponent--&gt;[0,255],减去127--&gt;[-127,+128],加上15是因为同样fp16的指数位也需要区分正负，加上15之后就直接能跟5位所能表示的最大值31进行比较了，去除正负指数的影响
+    short newexp = exponent + (-127 + 15);
+    //fp16指数位5位，最大能表示的指数就是31...
+    //超过31仍然会上溢出
+    if (newexp &gt;= 31)
+    &#123;
+        // overflow, return infinity
+        //这时候的fp32的值超出了fp16的表示范围，保留符号位，指数位全1，小数位全0
+        fp16 = (sign &lt;&lt; 15) | (0x1F &lt;&lt; 10) | 0x00;
+    &#125;
+    else if (newexp &lt;= 0)
+    &#123;
+        // Some normal fp32 cannot be expressed as normal fp16
+        //部分fp32的值不能表示成正常的fp16指数位和小数位全0
+        //这时候还是保留符号位，
+        fp16 = (sign &lt;&lt; 15) | (0x00 &lt;&lt; 10) | 0x00;
+    &#125;
+    else
+    &#123;
+        // normal fp16
+        //能够正常转换的fp32
+        //保留符号位，指数位取newexp的低5位，小数位取高10位
+        fp16 = (sign &lt;&lt; 15) | (newexp &lt;&lt; 10) | (significand &gt;&gt; 13);
+    &#125;
+&#125;
+
+return fp16;
+&#125;</code></pre>
+<p>&ensp;&ensp;fp16到fp32的转换，跟上面的过程类似：</p>
+<pre><code>float float16_to_float32(unsigned short value)
+&#123;
+// 1 : 5 : 10
+unsigned short sign = (value &amp; 0x8000) &gt;&gt; 15;
+unsigned short exponent = (value &amp; 0x7c00) &gt;&gt; 10;
+unsigned short significand = value &amp; 0x03FF;
+
+//     NCNN_LOGE(&quot;%d %d %d&quot;, sign, exponent, significand);
+
+// 1 : 8 : 23
+union
+&#123;
+    unsigned int u;
+    float f;
+&#125; tmp;
+if (exponent == 0)
+&#123;
+    if (significand == 0)
+    &#123;
+        // zero
+        tmp.u = (sign &lt;&lt; 31);
+    &#125;
+    else
+    &#123;
+        // denormal
+        exponent = 0;
+        // find non-zero bit
+        while ((significand &amp; 0x200) == 0)
+        &#123;
+            significand &lt;&lt;= 1;
+            exponent++;
+        &#125;
+        significand &lt;&lt;= 1;
+        significand &amp;= 0x3FF;
+        tmp.u = (sign &lt;&lt; 31) | ((-exponent + (-15 + 127)) &lt;&lt; 23) | (significand &lt;&lt; 13);
+    &#125;
+&#125;
+else if (exponent == 0x1F)
+&#123;
+    // infinity or NaN
+    tmp.u = (sign &lt;&lt; 31) | (0xFF &lt;&lt; 23) | (significand &lt;&lt; 13);
+&#125;
+else
+&#123;
+    // normalized
+    tmp.u = (sign &lt;&lt; 31) | ((exponent + (-15 + 127)) &lt;&lt; 23) | (significand &lt;&lt; 13);
+&#125;
+
+return tmp.f;
+&#125;</code></pre>
+
+      </div>
+      
+        <div class="prev-or-next">
+          <div class="post-foot-next">
+            
+              <a href="/2021/04/13/%E8%AE%AD%E7%BB%83%E6%8E%A8%E7%90%86/" target="_self">
+                <i class="iconfont icon-chevronleft"></i>
+                <span>上一页</span>
+              </a>
+            
+          </div>
+          <div class="post-attach">
+            <span class="post-pubtime">
+              <i class="iconfont icon-updatetime" title="更新时间"></i>
+              2021-04-20
+            </span>
+            
+                  <span class="post-categories">
+                    <i class="iconfont icon-bookmark" title="分类"></i>
+                    
+                    <span class="span--category">
+                      <a href="/categories/%E9%87%8F%E5%8C%96/" title="量化">
+                        <b>#</b> 量化
+                      </a>
+                    </span>
+                    
+                  </span>
+              
+                  <span class="post-tags">
+                    <i class="iconfont icon-tags" title="标签"></i>
+                    
+                    <span class="span--tag">
+                      <a href="/tags/%E9%87%8F%E5%8C%96/" title="量化">
+                        <b>#</b> 量化
+                      </a>
+                    </span>
+                    
+                  </span>
+              
+          </div>
+          <div class="post-foot-prev">
+            
+          </div>
+        </div>
+      
+    </div>
+    
+
+    
+  </div>
+
+
+        <div class="footer">
+  <div class="social">
+    <ul>
+      
+        <li>
+          <a title="github" target="_blank" rel="noopener" href="https://github.com/laiou">
+            <i class="iconfont icon-github"></i>
+          </a>
+        </li>
+      
+        <li>
+          <a title="email" href="zs2281475@163.com">
+            <i class="iconfont icon-envelope"></i>
+          </a>
+        </li>
+      
+    </ul>
+  </div>
+  
+    <div class="footer-more">
+      <a target="_blank" rel="noopener" href="https://github.com/laiou">© 2019 — 2020  Laiuos</a>
+    </div>
+  
+    <div class="footer-more">
+      <a target="_blank" rel="noopener" href="https://creativecommons.org/licenses/by-nc-nd/4.0/">All content under CC BY-NC-ND 4.0</a>
+    </div>
+  
+</div>
+
+      </div>
+
+      <div class="back-to-top hidden">
+  <a href="javascript: void(0)">
+    <i class="iconfont icon-chevronup"></i>
+  </a>
+</div>
+
+
+<script src="/js/backtotop.js"></script>
+
+
+
+      
+
+
+    </div>
+  </body>
+</html>

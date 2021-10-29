@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+  <head>
+  <meta charset="utf-8">
+  <meta name="author" content="zchengsite, 1451426471@qq.com" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  
+  
+  <title>模型剪枝的相关内容 | Blog</title>
+
+  
+    <link rel="apple-touch-icon" href="/images/favicon.png">
+    <link rel="icon" href="/images/favicon.png">
+  
+
+  <!-- Raleway-Font -->
+  <link href="https://fonts.googleapis.com/css?family=Raleway&display=swap" rel="stylesheet">
+
+  <!-- hexo site css -->
+  
+<link rel="stylesheet" href="/css/base.css">
+<link rel="stylesheet" href="/iconfont/iconfont.css">
+<link rel="stylesheet" href="/css/github-markdown.css">
+<link rel="stylesheet" href="/css/highlight.css">
+
+
+  <!-- jquery3.3.1 -->
+  <script src="https://cdn.bootcss.com/jquery/3.3.1/jquery.min.js"></script>
+
+  <!-- fancybox -->
+  <link href="https://cdn.bootcss.com/fancybox/3.5.2/jquery.fancybox.min.css" rel="stylesheet">
+  <script async src="https://cdn.bootcss.com/fancybox/3.5.2/jquery.fancybox.min.js"></script>
+  
+<script src="/js/fancybox.js"></script>
+
+
+  
+
+<meta name="generator" content="Hexo 5.1.1"></head>
+
+
+  <body>
+    <div id="app">
+      <div class="header">
+  <div class="avatar">
+    <a href="/">
+      <!-- 头像取消懒加载，添加no-lazy -->
+      
+        <img src="/images/avatar.png" alt="">
+      
+    </a>
+    <div class="nickname"><a href="/">Laious</a></div>
+  </div>
+  <div class="navbar">
+    <ul>
+      
+        <li class="nav-item" data-path="/">
+          <a href="/">Home</a>
+        </li>
+      
+        <li class="nav-item" data-path="/archives/">
+          <a href="/archives/">Archives</a>
+        </li>
+      
+        <li class="nav-item" data-path="/categories/">
+          <a href="/categories/">Categories</a>
+        </li>
+      
+        <li class="nav-item" data-path="/tags/">
+          <a href="/tags/">Tags</a>
+        </li>
+      
+        <li class="nav-item" data-path="/about/">
+          <a href="/about/">About</a>
+        </li>
+      
+    </ul>
+  </div>
+</div>
+
+
+<script src="/js/activeNav.js"></script>
+
+
+
+      <div class="flex-container">
+        <!-- 文章详情页，展示文章具体内容，url形式：https://yoursite/文章标题/ -->
+<!-- 同时为「标签tag」，「朋友friend」，「分类categories」，「关于about」页面的承载页面，具体展示取决于page.type -->
+
+
+
+  
+
+  
+
+  
+
+  
+  <!-- 文章内容页 url形式：https://yoursite/文章标题/ -->
+  <div class="container post-details" id="post-details">
+    <div class="post-content">
+      <div class="post-title">模型剪枝的相关内容</div>
+      <div class="post-attach">
+        <span class="post-pubtime">
+          <i class="iconfont icon-updatetime" title="更新时间"></i>
+          2021-04-07
+        </span>
+        
+              <span class="post-categories">
+                <i class="iconfont icon-bookmark" title="分类"></i>
+                
+                <span class="span--category">
+                  <a href="/categories/%E5%89%AA%E6%9E%9D/" title="剪枝">
+                    <b>#</b> 剪枝
+                  </a>
+                </span>
+                
+              </span>
+          
+              <span class="post-tags">
+                <i class="iconfont icon-tags" title="标签"></i>
+                
+                <span class="span--tag">
+                  <a href="/tags/%E5%89%AA%E6%9E%9D/" title="剪枝">
+                    <b>#</b> 剪枝
+                  </a>
+                </span>
+                
+              </span>
+          
+      </div>
+      <div class="markdown-body">
+        <hr>
+<p>&ensp;&ensp;结合两个开源的剪枝代码看一下通道剪枝的实现和原理等细节，两个项目的代码整合在<a target="_blank" rel="noopener" href="https://github.com/laiou/pruning-model">这里。</a><br>&ensp;&ensp;这里实现的是基于BN层scales参数的通道剪枝。基本思想是在模型训练的时候添加一个尺度层，来指定层次内不同通道的重要程度，同时这个尺度曾参数参与模型的训练，跟权重的一起进行优化，为了实现稀疏性，尺度层因子采用L1损失，则新的损失函数变成了L = loss + s<em>L1_loss,这里的loss是原本网络的损失，s用来平衡这两个损失。具体的s值可以在训练中多次测试得到最佳值。这样就实现了网络自动识别不重要的通道，后续根据尺度层因子的值即可实现对不重要的通道进行裁剪。<br>&ensp;&ensp;实际实现的过程中，会利用BN层的scales参数来作为尺度因子，进行稀疏性的训练。主要原因是：通常模型会在卷积之后进行BN操作，利用通道维度上的尺度调整参数，直接利用scales不会给模型训练带来额外的开销。同时，如果直接在卷积之后接一个缩放层，不进行BN操作的化，没有实际的意义，conv和这个缩放层都是线性变换，调整参数的值就能改回来。如果直接在BN操作前添加一个尺度层，BN的归一化会直接抵消尺度层的影响。如果在BN之后添加一个尺度层，那么这时候一个卷积层就会有两个连续的缩放因子，实际效果也是一样的。所以最终实现选取BN层的scales作为剪枝的尺度因子。<br>&ensp;&ensp;看一下具体的实现细节：总的来说，实现主要分成这几个部分：进行稀疏性训练，根据训练结果得到剪枝的模型，对剪枝后的模型再次训练进行微调。<br>&ensp;&ensp;稀疏性训练：这部分的实现跟正常的模型训练的过程差不多，从上面的原理中能看出，主要是针对BN层的scales参数进行调整，在具体实现的过程中，首先需要提取参与剪枝的层次的索引，然后只需要在反向传播之后或者在梯度跟完，进入下一个batch之前，在对应层BN的scales上加上s</em>sign(sclaes)即可，对应损失函数相对于BN层scales参数的稀疏性惩罚项的损失，实现对稀疏性尺度因子的训练。</p>
+<pre><code>def parse_module_defs(module_defs):
+#cbl_idx索引的是带BN的卷积层
+CBL_idx = []
+#cinv_idx索引的是不带bn的卷积层
+Conv_idx = []
+for i, module_def in enumerate(module_defs):
+    if module_def[&#39;type&#39;] == &#39;convolutional&#39;:
+        if module_def[&#39;batch_normalize&#39;] == &#39;1&#39;:
+            CBL_idx.append(i)
+        else:
+            Conv_idx.append(i)
+ignore_idx = set()
+#shortcut层前面的CBL模块不参与剪枝
+for i, module_def in enumerate(module_defs):
+    if module_def[&#39;type&#39;] == &#39;shortcut&#39;:
+        ignore_idx.add(i-1)
+        identity_idx = (i + int(module_def[&#39;from&#39;]))
+        if module_defs[identity_idx][&#39;type&#39;] == &#39;convolutional&#39;:
+            ignore_idx.add(identity_idx)
+        elif module_defs[identity_idx][&#39;type&#39;] == &#39;shortcut&#39;:
+            ignore_idx.add(identity_idx - 1)
+#上采样层前的卷积层不裁剪
+ignore_idx.add(84)
+ignore_idx.add(96)
+
+prune_idx = [idx for idx in CBL_idx if idx not in ignore_idx]
+
+return CBL_idx, Conv_idx, prune_idx
+
+class BNOptimizer():
+
+@staticmethod
+def updateBN(sr_flag, module_list, s, prune_idx):
+    if sr_flag:
+        for idx in prune_idx:
+            # Squential(Conv, BN, Lrelu)
+            bn_module = module_list[idx][1]
+            #在梯度中添加稀疏化惩罚的梯度，也就是l1的梯度
+            bn_module.weight.grad.data.add_(s * torch.sign(bn_module.weight.data))  # L1</code></pre>
+<p>&ensp;&ensp;然后就是根据稀疏性训练的结果进行剪枝，并得到剪枝以后的模型了，具体实现过程，首先还是提取相应的参与剪枝的层次索引，然后对所有参与剪枝的层次中的BN层scales的绝对值进行升序排序，同时计算每一个层次中BN层scales绝对值最大值，通过比较找到每层scales绝对值最大值的最小值，计算这个最小值在升序排列中的id以及所处位置占总scales参数的比例，作为剪枝的最小阈值，防止存在某一个层次，被剪掉全部的通道，根据原理，scales绝对值较小的通道被剪掉。这个阈值是理论上的最小阈值，实际剪枝阈值不能比这个小。<br>&ensp;&ensp;然后利用输入的阈值，先在升序排列中计算出索引，得到具体的阈值数值，然后遍历每一个参与剪枝层次的scales，绝对值小于阈值的scales直接置0，通过一个mask矩阵可以实现这个效果，此时，实际上的效果就是剪枝之后的效果了，然后需要将这个结果保存成模型文件。<br>&ensp;&ensp;保存成模型文件的时候需要注意，被剪掉的通道上只是scales被置0，偏置b还存在的，所以需要将偏置b的值传递到后面层次的相应参数中，具体的就是需要计算b在当前层的激活，将这个激活传递至下一层，这个时候要看下一层是只有卷积+偏置，还是带Bn的卷积，如果不带Bn,直接将这个激活值跟下一层的权重做卷积，结果添加到下一层的偏置上，否则激活调整到BN层的mean上，具体实现这里是用mean去减去这个激活，实际上还是加到里面来了。然后调整模型结构中相应层次的卷积核个数，就可以生成对应的cfg文件和weights文件了。这里大概说一下主要的过程，细节还是要看代码实现：</p>
+<pre><code>#抽取参与剪枝的CBL模块中bn层的scales的绝对值
+def gather_bn_weights(module_list, prune_idx):
+
+size_list = [module_list[idx][1].weight.data.shape[0] for idx in prune_idx]
+
+bn_weights = torch.zeros(sum(size_list))
+index = 0
+for idx, size in zip(prune_idx, size_list):
+    bn_weights[index:(index + size)] = module_list[idx][1].weight.data.abs().clone()
+    index += size
+
+return bn_weights
+
+sorted_bn = torch.sort(bn_weights)[0]
+
+# 避免剪掉所有channel的最高阈值(每个BN层的gamma的最大值或最小值的绝对值即为阈值上限)
+#抽取每一层剪枝的阈值，防止剪掉某一层的全部通道
+highest_thre = []
+for idx in prune_idx:
+#取的是某一层scales绝对值最大的值
+highest_thre.append(model.module_list[idx][1].weight.data.abs().max().item())
+#获取其中最小值，也就是最终的阈值实际上应该是所有层次中scales的绝对值的最小值
+highest_thre = min(highest_thre)
+
+# 找到highest_thre对应的下标对应的百分比，因为是升序排序，所以实际剪枝比例不能不这个大
+percent_limit = (sorted_bn==highest_thre).nonzero().item()/len(bn_weights)
+#这里将遍历参与剪枝的cbl层次，将其中相应的bn层的scales的绝对值小于剪枝阈值的置0，测试剪枝后模型的效果
+def prune_and_eval(model, sorted_bn, percent=.0):
+#深拷贝一个模型的副本
+model_copy = deepcopy(model)
+#根据剪枝比例计算相应的剪枝阈值的索引
+thre_index = int(len(sorted_bn) * percent)
+#获得α参数的阈值，小于该值的α参数对应的通道，全部裁剪掉
+#抽取剪枝的阈值
+thre = sorted_bn[thre_index]
+
+print(f&#39;Channels with Gamma value less than &#123;thre:.4f&#125; are pruned!&#39;)
+
+remain_num = 0
+#遍历全部参与剪枝的层次
+for idx in prune_idx:
+    #定位其中的BN层的位置
+    bn_module = model_copy.module_list[idx][1]
+    #计算当前BN层的mask矩阵，具体实现参考utils/prune_utils.py
+    #mask是一个只包括0和1的矩阵
+    mask = obtain_bn_mask(bn_module, thre)
+
+    remain_num += int(mask.sum())
+    #将BN层权重和mask做乘法，将小于阈值的权值变成0
+    bn_module.weight.data.mul_(mask)
+with torch.no_grad():
+    mAP = eval_model(model_copy)[1].mean()
+    return thre</code></pre>
+<p>&ensp;&ensp;上面主要实现到对剪枝层次的scales置0,得到剪枝后模型的效果，然后则需要根据剪枝的情况，调整对应偏置b的值，将剪除通道上b的影响传递到下一层适当的位置上：</p>
+<pre><code>#获取卷积核mask矩阵，最终返回的num_filters中存储的是每一个CBL模块中保留的通道数，filters_mask是每一个CBL模块的mask矩阵
+def obtain_filters_mask(model, thre, CBL_idx, prune_idx):
+
+pruned = 0
+total = 0
+num_filters = []
+filters_mask = []
+#CBL_idx存储的是所有带BN的卷积层（YOLO层的前一层卷积层是不带BN的）
+#遍历全部的CBL_idx
+for idx in CBL_idx:
+    bn_module = model.module_list[idx][1]
+    #遍历参与剪枝的CBL模块
+    if idx in prune_idx:
+        #计算相应的Bn层的mask
+        mask = obtain_bn_mask(bn_module, thre).cpu().numpy()
+        remain = int(mask.sum())
+        #统计一共剪除的通道数
+        pruned = pruned + mask.shape[0] - remain
+
+        if remain == 0:
+            print(&quot;Channels would be all pruned!&quot;)
+            raise Exception
+
+        print(f&#39;layer index: &#123;idx:&gt;3d&#125; \t total channel: &#123;mask.shape[0]:&gt;4d&#125; \t &#39;
+              f&#39;remaining channel: &#123;remain:&gt;4d&#125;&#39;)
+    else:
+        #对于不参与剪枝的CBL模块，mask就是全1的矩阵
+        mask = np.ones(bn_module.weight.data.shape)
+        remain = mask.shape[0]
+
+    total += mask.shape[0]
+    num_filters.append(remain)
+    filters_mask.append(mask.copy())
+
+#因此，这里求出的prune_ratio,需要裁剪的α参数/cbl_idx中所有的α参数
+prune_ratio = pruned / total
+print(f&#39;Prune channels: &#123;pruned&#125;\tPrune ratio: &#123;prune_ratio:.3f&#125;&#39;)
+
+return num_filters, filters_mask
+#获取卷积核的mask矩阵，通过Bn层剪除某些通道之后，对相应的层次的卷积核是有影响的，所以最终生成模型的时候需要删除相应的卷积核
+num_filters, filters_mask = obtain_filters_mask(model, threshold, CBL_idx, prune_idx)
+#CBLidx2mask存储CBL_idx中，每一层BN层对应的mask
+#这里将每一个CBL模块的idx和相应的mask矩阵绑定，变成一个字典，这里面的mask实际上还是Bn层的mask
+CBLidx2mask = &#123;idx: mask for idx, mask in zip(CBL_idx, filters_mask)&#125;
+#对模型进行剪枝，这里只是处理剪枝之后相应层次的遗留偏置，将对应的偏置数据处理到下一层中，这个时候模型结构实际上还是原来的模型结构
+#具体参考utils/prune_utils.py
+pruned_model = prune_model_keep_size(model, prune_idx, CBL_idx, CBLidx2mask)
+
+#调整剪枝的模型，处理剪枝之后，也就是BN层的scales被置0之后的偏置
+def prune_model_keep_size(model, prune_idx, CBL_idx, CBLidx2mask):
+
+pruned_model = deepcopy(model)
+#循环遍历每一个剪枝层
+for idx in prune_idx:
+    #获得对应层的mask矩阵
+    mask = torch.from_numpy(CBLidx2mask[idx]).cuda()
+    #定位相应的Bn层位置
+    bn_module = pruned_model.module_list[idx][1]
+    #将相应scales置0
+    bn_module.weight.data.mul_(mask)
+    #计算剪掉的那些层的偏置的激活
+    activation = F.leaky_relu((1 - mask) * bn_module.bias.data, 0.1)
+
+    # 两个上采样层前的卷积层
+    #定位下一个卷积层的idx
+    next_idx_list = [idx + 1]
+    #这里是upsample前的两个卷积层，idx是79和91的时候出现分支，还要加上分支的输出层次
+    if idx == 79:
+        next_idx_list.append(84)
+    elif idx == 91:
+        next_idx_list.append(96)
+    #循环遍历全部的下一层
+    for next_idx in next_idx_list:
+        #定位相应的层次的位置
+        next_conv = pruned_model.module_list[next_idx][0]
+        #将相应的卷积层权重求和，这里比如原来的卷积层权重维度是[kernel_numbel,input_channel,size,size]--&gt;[kernel_numbel,input_channel]
+        #将上面的到的被剪除的层次的偏置的激活值跟这里的权重矩阵做矩阵乘法，结果调整成一维
+        #这里的激活矩阵调整之后的维度是[input_channel,1],所以最终的offset的维度就是[kernel_numel,1]
+        #offset代表的是上一层被剪除的通道中的偏置输入当前层进行的计算
+        conv_sum = next_conv.weight.data.sum(dim=(2, 3))
+        offset = conv_sum.matmul(activation.reshape(-1, 1)).reshape(-1)
+        #如果是CBL模块
+        if next_idx in CBL_idx:
+            #将上面的offset添加到其中的BN层的均值中，虽然是减去这个只值，实际上是把这个结果加进去了
+            next_bn = pruned_model.module_list[next_idx][1]
+            next_bn.running_mean.data.sub_(offset)
+        else:
+            #这里需要注意的是，对于convolutionnal，如果有BN，则该层卷积层不使用bias，如果无BN，则使用bias
+            #不是CBL模块，直接加到偏置上
+            next_conv.bias.data.add_(offset)
+    #然后将相应的BN层或者说卷积的偏置乘上mask，同样剪除偏置
+    bn_module.bias.data.mul_(mask)
+
+return pruned_model</code></pre>
+<p>&ensp;&ensp;至此，剪枝后的权重调整完毕，接下来根据剪枝结果生成新的cfg和weights文件，生成cfg根据原有模型cfg，调整对应层次卷积核数量即可，weights则需要根据上面对权重的调整结果，对根据新的cfg生成的模型结构进行填充，然后保存成weights文件。</p>
+<pre><code>#获得原始模型的module_defs，并修改该defs中的卷积核数量
+#复制原来的模型结构
+compact_module_defs = deepcopy(model.module_defs)
+#调整剪枝后的卷积核数量
+for idx, num in zip(CBL_idx, num_filters):
+    assert compact_module_defs[idx][&#39;type&#39;] == &#39;convolutional&#39;
+    compact_module_defs[idx][&#39;filters&#39;] = str(num)
+
+#利用剪枝的模型结构和超参数创建新模型
+compact_model = Darknet([model.hyperparams.copy()] + compact_module_defs).to(device)
+#获取剪枝后模型的参数
+compact_nparameters = obtain_num_parameters(compact_model)
+#用剪枝后的权重填充剪枝后的模型结构，具体实现参考utils/prune_utils.py
+init_weights_from_loose_model(compact_model, pruned_model, CBL_idx, Conv_idx, CBLidx2mask)
+
+#用调整过的原来模型的权重初始化剪枝模型
+def init_weights_from_loose_model(compact_model, loose_model, CBL_idx, Conv_idx, CBLidx2mask):
+#循环遍历每一个CBL模块，注意不是所有的CBL都参与了剪枝
+for idx in CBL_idx:
+    #定位新模型和剪枝模型中对应层次的位置
+    compact_CBL = compact_model.module_list[idx]
+    loose_CBL = loose_model.module_list[idx]
+    #获取对应输出通道的索引，利用np.argwhere抽取权重mask矩阵中非零元素的索引
+    out_channel_idx = np.argwhere(CBLidx2mask[idx])[:, 0].tolist()
+    #定位BN层
+    compact_bn, loose_bn         = compact_CBL[1], loose_CBL[1]
+    #对BN层相应保存的通道上的参数进行复制
+    compact_bn.weight.data       = loose_bn.weight.data[out_channel_idx].clone()
+    compact_bn.bias.data         = loose_bn.bias.data[out_channel_idx].clone()
+    compact_bn.running_mean.data = loose_bn.running_mean.data[out_channel_idx].clone()
+    compact_bn.running_var.data  = loose_bn.running_var.data[out_channel_idx].clone()
+    #接下来就是对conv的参数进行赋值了
+    #获取相应的输入的mask矩阵，根据上一层的剪枝结果获得当前层的输入的mask矩阵
+    #具体实现参考utils/prune_utils.py
+    input_mask = get_input_mask(loose_model.module_defs, idx, CBLidx2mask)
+    #提取相应的保留的输入通道的索引
+    in_channel_idx = np.argwhere(input_mask)[:, 0].tolist()
+    #定位卷积层的位置
+    compact_conv, loose_conv = compact_CBL[0], loose_CBL[0]
+    #这里两步骤分别是根据上一层剪枝结果，抽取相应的weights数据，然后在这个基础上根据当前层剪枝结果获得最终权值
+    tmp = loose_conv.weight.data[:, in_channel_idx, :, :].clone()
+    compact_conv.weight.data = tmp[out_channel_idx, :, :, :].clone()
+#然后在循环处理正常的卷积层，逻辑是一样的
+for idx in Conv_idx:
+    compact_conv = compact_model.module_list[idx][0]
+    loose_conv = loose_model.module_list[idx][0]
+
+    input_mask = get_input_mask(loose_model.module_defs, idx, CBLidx2mask)
+    in_channel_idx = np.argwhere(input_mask)[:, 0].tolist()
+    compact_conv.weight.data = loose_conv.weight.data[:, in_channel_idx, :, :].clone()
+    compact_conv.bias.data   = loose_conv.bias.data.clone()</code></pre>
+<p>&ensp;&ensp;到这里就生成了剪枝之后的cfg和weights文件，然后用新的cfg和weigths,作为基准，进行训练微调即可。<br>&ensp;&ensp;最后补充一下关于不同剪枝层次间的区别和对应细节上的处理，在这两个开源项目中，主要实现了对conv_Bn_activation模块的剪枝，yolov3模型中多数卷积是这种结构，只有yolo层前面的卷积是单独的conv_activation，具体剪枝的时候upsample层前面的卷积模块不参与剪枝，主要是为了保留足够多的特征数量，然后上面代码实现的过程中没有对shortcut层前面的卷积模块进行剪枝，这个时候生成的结果是不需要微调的。这里在补充一下对shortcut层前面的卷积层参与剪枝的细节，shortcut层是要实现的是一个元素级别的相加操作，所以shortcut层两个输入层剪枝的方式要一致，yolov3中，shortcut的输入主要是两个卷积层，或者一个卷积层一个shortcut层，对shortcut层输入的卷积层，其剪枝的mask矩阵直接继承上一个shortcut层次输入卷积层的mask矩阵，因为是直接继承过来的，所以计算阈值的时候不用包括shortcut层的参数，然后就是在激活的处理上，以shortcut的输出作为输入，yolov3中主要有upsample,shortcut,卷积，route层，conv跟上面一样处理即可，upsample不参与剪枝，激活输出的调整量是0，这里说一下route层，route实现的是通道维度上的拼接，所以直接取route层的输入层次的激活调整值，按照route的拼接规则拼接即可得到route层的激活调整，然传递到下一层即可。<br>&ensp;&ensp;shortcut层剪枝mask矩阵的继承调整：</p>
+<pre><code>    def prune_and_eval(model, sorted_bn, percent=.0):
+    model_copy = deepcopy(model)
+    thre_index = int(len(sorted_bn) * percent)
+    #获得α参数的阈值，小于该值的α参数对应的通道，全部裁剪掉
+    thre1 = sorted_bn[thre_index]
+
+    print(f&#39;Channels with Gamma value less than &#123;thre1:.6f&#125; are pruned!&#39;)
+
+    remain_num = 0
+    idx_new=dict()
+    #遍历每一个剪枝层次
+    for idx in prune_idx:
+        #不是shortcut前的卷积层，和正常的一样处理
+        if idx not in shortcut_idx:
+
+            bn_module = model_copy.module_list[idx][1]
+
+            mask = obtain_bn_mask(bn_module, thre1)
+            #记录剪枝后，每一层卷积层对应的mask
+            # idx_new[idx]=mask.cpu().numpy()
+            idx_new[idx]=mask
+            remain_num += int(mask.sum())
+            bn_module.weight.data.mul_(mask)
+            #bn_module.bias.data.mul_(mask*0.0001)
+        else:
+            #shortcut前的卷积
+            #定位其中的BN层
+            bn_module = model_copy.module_list[idx][1]
+
+            #相应的mask就是当前shortcut层另一个输入卷积层的mask，简单逻辑是这样，如果另一个是shortcut1，就是shortcut1上一层的卷积的mask
+            #看一下yolov3的模型结构就明白了
+            mask=idx_new[shortcut_idx[idx]]
+            #将相应的矩阵统计起来
+            idx_new[idx]=mask
+
+
+            remain_num += int(mask.sum())
+            #调整scales
+            bn_module.weight.data.mul_(mask)
+
+        #print(int(mask.sum()))
+
+ def obtain_filters_mask(model, thre, CBL_idx, prune_idx):
+
+    pruned = 0
+    total = 0
+    num_filters = []
+    filters_mask = []
+    idx_new=dict()
+    #CBL_idx存储的是所有带BN的卷积层（YOLO层的前一层卷积层是不带BN的）
+    for idx in CBL_idx:
+        bn_module = model.module_list[idx][1]
+        if idx in prune_idx:
+            if idx not in shortcut_idx:
+
+                mask = obtain_bn_mask(bn_module, thre).cpu().numpy()
+                idx_new[idx]=mask
+                remain = int(mask.sum())
+                pruned = pruned + mask.shape[0] - remain
+
+                # if remain == 0:
+                #     print(&quot;Channels would be all pruned!&quot;)
+                #     raise Exception
+
+                # print(f&#39;layer index: &#123;idx:&gt;3d&#125; \t total channel: &#123;mask.shape[0]:&gt;4d&#125; \t &#39;
+                #     f&#39;remaining channel: &#123;remain:&gt;4d&#125;&#39;)
+            else:
+                #获得权重mask的时候，对于shortcut前面的层次，还是一样的处理方式，因为这里实际上的mask还是BN层的mask
+                mask=idx_new[shortcut_idx[idx]]
+                idx_new[idx]=mask
+                remain= int(mask.sum())
+                pruned = pruned + mask.shape[0] - remain
+
+            if remain == 0:
+                print(&quot;Channels would be all pruned!&quot;)
+                raise Exception
+
+            print(f&#39;layer index: &#123;idx:&gt;3d&#125; \t total channel: &#123;mask.shape[0]:&gt;4d&#125; \t &#39;
+                    f&#39;remaining channel: &#123;remain:&gt;4d&#125;&#39;)
+        else:
+            mask = np.ones(bn_module.weight.data.shape)
+            remain = mask.shape[0]
+
+        total += mask.shape[0]
+        num_filters.append(remain)
+        filters_mask.append(mask.copy())
+
+    #因此，这里求出的prune_ratio,需要裁剪的α参数/cbl_idx中所有的α参数
+    prune_ratio = pruned / total
+    print(f&#39;Prune channels: &#123;pruned&#125;\tPrune ratio: &#123;prune_ratio:.3f&#125;&#39;)
+
+    return num_filters, filters_mask</code></pre>
+<p>&ensp;&ensp;然后是剪枝模型，对偏置激活的处置：</p>
+<pre><code>    def update_activation(i, pruned_model, activation, CBL_idx):
+    next_idx = i + 1
+    if pruned_model.module_defs[next_idx][&#39;type&#39;] == &#39;convolutional&#39;:
+        next_conv = pruned_model.module_list[next_idx][0]
+        conv_sum = next_conv.weight.data.sum(dim=(2, 3))
+        offset = conv_sum.matmul(activation.reshape(-1, 1)).reshape(-1)
+        if next_idx in CBL_idx:
+            next_bn = pruned_model.module_list[next_idx][1]
+            next_bn.running_mean.data.sub_(offset)
+        else:
+            next_conv.bias.data.add_(offset)
+
+
+
+def prune_model_keep_size2(model, prune_idx, CBL_idx, CBLidx2mask):
+
+    pruned_model = deepcopy(model)
+    activations = []
+    for i, model_def in enumerate(model.module_defs):
+
+        if model_def[&#39;type&#39;] == &#39;convolutional&#39;:
+            activation = None
+            if i in prune_idx:
+                mask = torch.from_numpy(CBLidx2mask[i]).cuda()
+                bn_module = pruned_model.module_list[i][1]
+                bn_module.weight.data.mul_(mask)
+                activation = F.leaky_relu((1 - mask) * bn_module.bias.data, 0.1)
+                update_activation(i, pruned_model, activation, CBL_idx)
+                bn_module.bias.data.mul_(mask)
+            activations.append(activation)
+            #主要看一下shortcut层的处理
+        if model_def[&#39;type&#39;] == &#39;shortcut&#39;:
+            #定位上一个卷积层的激活
+            actv1 = activations[i - 1]
+            #抽取另外一个输入的id
+            from_layer = int(model_def[&#39;from&#39;])
+            #得到另一个输入的激活
+            actv2 = activations[i + from_layer]
+            #得到当前shortcut层的激活调整量
+            activation = actv1 + actv2
+            #然后将这个激活调整更新到下一层的参数里
+            update_activation(i, pruned_model, activation, CBL_idx)
+            activations.append(activation)
+
+
+        #因为对shortcut层剪枝了，route层有shortcut层的输入和upsample层的输入，所以要处理一下
+        if model_def[&#39;type&#39;] == &#39;route&#39;:
+            from_layers = [int(s) for s in model_def[&#39;layers&#39;].split(&#39;,&#39;)]
+            if len(from_layers) == 1:
+                #一层输入的route,激活调整量就是那一层的激活调整
+                activation = activations[i + from_layers[0]]
+                update_activation(i, pruned_model, activation, CBL_idx)
+            else:
+                #两个层的route,激活调整量就是两层的拼接
+                #定位相应两层的激活调整量
+                actv1 = activations[i + from_layers[0]]
+                actv2 = activations[from_layers[1]]
+                #跟route一样的顺序拼接得到route层的激活调整
+                activation = torch.cat((actv1, actv2))
+                #更新到下一层的参数中
+                update_activation(i, pruned_model, activation, CBL_idx)
+            activations.append(activation)
+            #upsample层比较容易，不剪枝，所以激活调整量就是0
+        if model_def[&#39;type&#39;] == &#39;upsample&#39;:
+            activation = torch.zeros(int(model.module_defs[i - 1][&#39;filters&#39;])).cuda()
+            activations.append(activation)
+
+        if model_def[&#39;type&#39;] == &#39;yolo&#39;:
+            activations.append(None)
+
+    return pruned_model</code></pre>
+<p>&ensp;&ensp;如果对剪枝以后模型卷积核尺寸有要求的话，在生成mask矩阵的时候可以进行相应的调整，根据不通层次的要求，给不同层次重新指定剪枝阈值即可。</p>
+
+      </div>
+      
+        <div class="prev-or-next">
+          <div class="post-foot-next">
+            
+              <a href="/2021/03/29/%E7%AE%97%E5%AD%90%E5%AE%9E%E7%8E%B0/" target="_self">
+                <i class="iconfont icon-chevronleft"></i>
+                <span>上一页</span>
+              </a>
+            
+          </div>
+          <div class="post-attach">
+            <span class="post-pubtime">
+              <i class="iconfont icon-updatetime" title="更新时间"></i>
+              2021-04-07
+            </span>
+            
+                  <span class="post-categories">
+                    <i class="iconfont icon-bookmark" title="分类"></i>
+                    
+                    <span class="span--category">
+                      <a href="/categories/%E5%89%AA%E6%9E%9D/" title="剪枝">
+                        <b>#</b> 剪枝
+                      </a>
+                    </span>
+                    
+                  </span>
+              
+                  <span class="post-tags">
+                    <i class="iconfont icon-tags" title="标签"></i>
+                    
+                    <span class="span--tag">
+                      <a href="/tags/%E5%89%AA%E6%9E%9D/" title="剪枝">
+                        <b>#</b> 剪枝
+                      </a>
+                    </span>
+                    
+                  </span>
+              
+          </div>
+          <div class="post-foot-prev">
+            
+              <a href="/2021/04/13/%E8%AE%AD%E7%BB%83%E6%8E%A8%E7%90%86/" target="_self">
+                <span>下一页</span>
+                <i class="iconfont icon-chevronright"></i>
+              </a>
+            
+          </div>
+        </div>
+      
+    </div>
+    
+
+    
+  </div>
+
+
+        <div class="footer">
+  <div class="social">
+    <ul>
+      
+        <li>
+          <a title="github" target="_blank" rel="noopener" href="https://github.com/laiou">
+            <i class="iconfont icon-github"></i>
+          </a>
+        </li>
+      
+        <li>
+          <a title="email" href="zs2281475@163.com">
+            <i class="iconfont icon-envelope"></i>
+          </a>
+        </li>
+      
+    </ul>
+  </div>
+  
+    <div class="footer-more">
+      <a target="_blank" rel="noopener" href="https://github.com/laiou">© 2019 — 2020  Laiuos</a>
+    </div>
+  
+    <div class="footer-more">
+      <a target="_blank" rel="noopener" href="https://creativecommons.org/licenses/by-nc-nd/4.0/">All content under CC BY-NC-ND 4.0</a>
+    </div>
+  
+</div>
+
+      </div>
+
+      <div class="back-to-top hidden">
+  <a href="javascript: void(0)">
+    <i class="iconfont icon-chevronup"></i>
+  </a>
+</div>
+
+
+<script src="/js/backtotop.js"></script>
+
+
+
+      
+
+
+    </div>
+  </body>
+</html>

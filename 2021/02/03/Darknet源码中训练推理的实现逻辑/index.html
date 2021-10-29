@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+  <head>
+  <meta charset="utf-8">
+  <meta name="author" content="zchengsite, 1451426471@qq.com" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  
+  
+  <title>Darknet源码中训练推理的实现逻辑 | Blog</title>
+
+  
+    <link rel="apple-touch-icon" href="/images/favicon.png">
+    <link rel="icon" href="/images/favicon.png">
+  
+
+  <!-- Raleway-Font -->
+  <link href="https://fonts.googleapis.com/css?family=Raleway&display=swap" rel="stylesheet">
+
+  <!-- hexo site css -->
+  
+<link rel="stylesheet" href="/css/base.css">
+<link rel="stylesheet" href="/iconfont/iconfont.css">
+<link rel="stylesheet" href="/css/github-markdown.css">
+<link rel="stylesheet" href="/css/highlight.css">
+
+
+  <!-- jquery3.3.1 -->
+  <script src="https://cdn.bootcss.com/jquery/3.3.1/jquery.min.js"></script>
+
+  <!-- fancybox -->
+  <link href="https://cdn.bootcss.com/fancybox/3.5.2/jquery.fancybox.min.css" rel="stylesheet">
+  <script async src="https://cdn.bootcss.com/fancybox/3.5.2/jquery.fancybox.min.js"></script>
+  
+<script src="/js/fancybox.js"></script>
+
+
+  
+
+<meta name="generator" content="Hexo 5.1.1"></head>
+
+
+  <body>
+    <div id="app">
+      <div class="header">
+  <div class="avatar">
+    <a href="/">
+      <!-- 头像取消懒加载，添加no-lazy -->
+      
+        <img src="/images/avatar.png" alt="">
+      
+    </a>
+    <div class="nickname"><a href="/">Laious</a></div>
+  </div>
+  <div class="navbar">
+    <ul>
+      
+        <li class="nav-item" data-path="/">
+          <a href="/">Home</a>
+        </li>
+      
+        <li class="nav-item" data-path="/archives/">
+          <a href="/archives/">Archives</a>
+        </li>
+      
+        <li class="nav-item" data-path="/categories/">
+          <a href="/categories/">Categories</a>
+        </li>
+      
+        <li class="nav-item" data-path="/tags/">
+          <a href="/tags/">Tags</a>
+        </li>
+      
+        <li class="nav-item" data-path="/about/">
+          <a href="/about/">About</a>
+        </li>
+      
+    </ul>
+  </div>
+</div>
+
+
+<script src="/js/activeNav.js"></script>
+
+
+
+      <div class="flex-container">
+        <!-- 文章详情页，展示文章具体内容，url形式：https://yoursite/文章标题/ -->
+<!-- 同时为「标签tag」，「朋友friend」，「分类categories」，「关于about」页面的承载页面，具体展示取决于page.type -->
+
+
+
+  
+
+  
+
+  
+
+  
+  <!-- 文章内容页 url形式：https://yoursite/文章标题/ -->
+  <div class="container post-details" id="post-details">
+    <div class="post-content">
+      <div class="post-title">Darknet源码中训练推理的实现逻辑</div>
+      <div class="post-attach">
+        <span class="post-pubtime">
+          <i class="iconfont icon-updatetime" title="更新时间"></i>
+          2021-02-03
+        </span>
+        
+              <span class="post-categories">
+                <i class="iconfont icon-bookmark" title="分类"></i>
+                
+                <span class="span--category">
+                  <a href="/categories/%E4%BB%A3%E7%A0%81%E8%A7%A3%E6%9E%90/" title="代码解析">
+                    <b>#</b> 代码解析
+                  </a>
+                </span>
+                
+              </span>
+          
+              <span class="post-tags">
+                <i class="iconfont icon-tags" title="标签"></i>
+                
+                <span class="span--tag">
+                  <a href="/tags/darknet/" title="darknet">
+                    <b>#</b> darknet
+                  </a>
+                </span>
+                
+              </span>
+          
+      </div>
+      <div class="markdown-body">
+        <hr>
+<p>&ensp;&ensp;Darknet是一个基于c和cuda_c的算法框架，这里主要看一下相应的实现，包括cpu和gpu版本的训练推理的总体结构，以及相应层次的相关实现细节。<br>&ensp;&ensp;先看一下训练的相关实现，主要的代码注释<a target="_blank" rel="noopener" href="https://github.com/laiou/darknet">可以看这里。</a>，从example/darknet.c中的main函数开始，接收相应的命令行参数，先看一下cpu版本的实现，以yolo为例，通过相应参数跳转到example/yolo.c中的run_yolo函数，在run_yolo中，通过train_yolo函数实现相应的训练过程，train_yolo函数同样实现在example/yolo.c中，其中主要的流程是先加载预训练的模型，然后加载训练的图片数据，通过多线程实现不通batch的数据加载，然后进行相应的训练流程。<br>&ensp;&ensp;其中加载预训练的模型通过load_network函数，实现在src/network.c，返回一个network结构体指针，这个network结构体的声明在include/darknet.h中主要包含了整个网络的相关超参数以及相应的输入输出等相关指针。然后在load_network中先后通过parse_network_cfg和load_weights函数实现预训练模型的加载，yolo系列的模型主要通过一个cfg配置文件和一个weights的权重文件组成，parse_network_cfg函数通过解析cfg文件给相应的模型分配内存，对相关层次的某些参数进行赋值，同时生成一个链表结构表示整体的模型结构，返回一个network结构体指针，具体的parse_network_cfg的实现在src/parse.c，主要实现的流程就是先读取cfg文件中的内容，根据[]确定不同的网络层次，将cfg中的相关内容读取到一个list链表中，list是声明在include/darknet.h中的一个链表指针，cfg中一个分组作为一个节点存储在list里面，然后遍历这个list，根据不通层次类型进行相应的内存分配和相关初始参数的赋值，不同层次的实现细节上存在差异，总体过程基本类似。通过parse_network_cfg得到相应的网络结构表示以及完成了相应内存分配之后，利用load_weights函数将相应的权重加载到network结构相应的位置，具体的实现在src/parser.c中，通过相应的读文件操作，将不通层次的权值读取到network结构中相应的指针位置上。完成整个预训练模型的权值加载。<br>&ensp;&ensp;然后就是通过多线程来实现不通batch数据的加载，通过pthread_t和一个load_data_in_thread函数来实现，load_data_in_thread函数实现了加载一个batch数据的功能，具体实现在src/data.c，darknet中实现了多种格式的数据加载方式，通过load_data_in_thread跳转之后都能看得到。<br>&ensp;&ensp;预训练的模型和数据加载模块完成以后，就是进行具体训练过程的train_network函数了，具体实现在src/network.c。train_network中实现的功能主要是加载一个mini_batch的数据，完成一次训练过程，重复到整个batch结束，返回整个batch上的平均损失,需要注意的是这里通过多线程每个线程每次加载的数据量是一个batch的数据，但是最终进网络的时候会将一个batch划分成多个更小的mini_batch。在train_network函数中，利用一个循环实现不通mini_batch数据传入网络进行训练,接收一个mini_batch数据进行训练构成的具体函数是train_network_datum，实现在src/network.c，主要实现了训练过程中的前向传播，反向传播和参数更新的过程，通过forward_network函数实现相应的前向传播功能，具体实现在src/network.c，这个函数需要主义的两个地方一个是声明一个结构体作为中间变量，负责记录定位当前计算进行到了哪一个层次，已经相应的超参数和传递到下一层的数据等信息，第二个就是每一次传入到这个network结构中进行计算的层次，实际上都是先声明了一个副本，也就是说在每一次前向传播的计算过程中，传入计算的是当前层次的副本，通过指针改变相应位置的数值，但是原来的指针只想位置并没有改变，不通层次的前向传播算法实现在给不同网络层次分配内存的时候就指定了。前向传播完成之后进行相应的反向传播过程，backward_network的实现在src/network.c，跟前像传播的实现类似，同样通过一个network作为中间变量定位相应的层次，也是传入副本进行计算，差别是反向传播从这个网络链表的最后一层向后遍历实现计算过程和相应数据传递，反向传播结束之后进行相应的参数更新，具体流程基本上和前向传播等过程类似，实现在src/network.c/update_network函数。<br>&ensp;&ensp;训练过程的基本流程基本上是这样的一个过程，然后推理的话实际上就是一个只进行前向传播，不进行反向传播的过程。然后在详细看一下几个结构体的声明，这里不过多的去解释每一个参数的意义，具体意义可以结合代码注释去看，这里说一下每个结构体声明的相应的作用。第一个就是network结构体，这个结构体里面的参数主要是网络超参数和网络层次结构layer的指针，和一写指向相应输入输出的指针，主要用来表示一个网络结构，比如说各种网络超参数，层次指针layer指向网络起始第一层的指针，另一个的作用就是上面说的训练等过程中充当中间变量的作用，比如训练的时候，层次指针指向当前进行计算的层次，相应的数据指针指向相应的输入输出等等。第二个就是表示不同网络层次的结构体layer，layer中的数据都是整个网络不通层次需要用到的参数比如权重，偏置，卷积的话比如步长等等这些，包括每个层次的前向传播函数等等这些都在这个结构提里面声明，进行赋值。然后就是list和node结构体，这两个的作用主要是用在读取cfg文件的时候，将相应的cfg内容生成一个链表，后续通过这个链表形成具体的network结构，也就是用链表节点中的参数来生成不同的layer层，根据链表的连接关系，将layer层连接起来构成整个network结构。<br>&ensp;&ensp;gpu版本的主要流程和cpu版本也是类似的，不同的是将相应的计算从cpu上转移到了gpu上，涉及到数据在主机和gpu设备的传递，和在gpu上进行不同层次的计算等等。这些后面跟具体层次的实现放到一起。数据的传递主要就是将训练数据传递到gpu和将最终结果从gpu上拷贝到主机，某些特殊层次可能需要中间结果也会将相应输出从gpu上拷贝到主机，如果是需要加载预训练模型的话，相应的模型参数也会涉及主机和gpu之间的数据传递。</p>
+
+      </div>
+      
+        <div class="prev-or-next">
+          <div class="post-foot-next">
+            
+              <a href="/2020/12/03/Deepstream%E6%9E%B6%E6%9E%84%E5%88%86%E6%9E%90/" target="_self">
+                <i class="iconfont icon-chevronleft"></i>
+                <span>上一页</span>
+              </a>
+            
+          </div>
+          <div class="post-attach">
+            <span class="post-pubtime">
+              <i class="iconfont icon-updatetime" title="更新时间"></i>
+              2021-02-03
+            </span>
+            
+                  <span class="post-categories">
+                    <i class="iconfont icon-bookmark" title="分类"></i>
+                    
+                    <span class="span--category">
+                      <a href="/categories/%E4%BB%A3%E7%A0%81%E8%A7%A3%E6%9E%90/" title="代码解析">
+                        <b>#</b> 代码解析
+                      </a>
+                    </span>
+                    
+                  </span>
+              
+                  <span class="post-tags">
+                    <i class="iconfont icon-tags" title="标签"></i>
+                    
+                    <span class="span--tag">
+                      <a href="/tags/darknet/" title="darknet">
+                        <b>#</b> darknet
+                      </a>
+                    </span>
+                    
+                  </span>
+              
+          </div>
+          <div class="post-foot-prev">
+            
+              <a href="/2021/02/04/Darknet%E4%B8%AD%E7%9B%B8%E5%85%B3%E5%B1%82%E6%AC%A1%E7%9A%84%E5%AE%9E%E7%8E%B0/" target="_self">
+                <span>下一页</span>
+                <i class="iconfont icon-chevronright"></i>
+              </a>
+            
+          </div>
+        </div>
+      
+    </div>
+    
+
+    
+  </div>
+
+
+        <div class="footer">
+  <div class="social">
+    <ul>
+      
+        <li>
+          <a title="github" target="_blank" rel="noopener" href="https://github.com/laiou">
+            <i class="iconfont icon-github"></i>
+          </a>
+        </li>
+      
+        <li>
+          <a title="email" href="zs2281475@163.com">
+            <i class="iconfont icon-envelope"></i>
+          </a>
+        </li>
+      
+    </ul>
+  </div>
+  
+    <div class="footer-more">
+      <a target="_blank" rel="noopener" href="https://github.com/laiou">© 2019 — 2020  Laiuos</a>
+    </div>
+  
+    <div class="footer-more">
+      <a target="_blank" rel="noopener" href="https://creativecommons.org/licenses/by-nc-nd/4.0/">All content under CC BY-NC-ND 4.0</a>
+    </div>
+  
+</div>
+
+      </div>
+
+      <div class="back-to-top hidden">
+  <a href="javascript: void(0)">
+    <i class="iconfont icon-chevronup"></i>
+  </a>
+</div>
+
+
+<script src="/js/backtotop.js"></script>
+
+
+
+      
+
+
+    </div>
+  </body>
+</html>

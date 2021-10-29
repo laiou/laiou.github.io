@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+  <head>
+  <meta charset="utf-8">
+  <meta name="author" content="zchengsite, 1451426471@qq.com" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  
+  
+  <title>Darknet源码中相关层次的具体实现 | Blog</title>
+
+  
+    <link rel="apple-touch-icon" href="/images/favicon.png">
+    <link rel="icon" href="/images/favicon.png">
+  
+
+  <!-- Raleway-Font -->
+  <link href="https://fonts.googleapis.com/css?family=Raleway&display=swap" rel="stylesheet">
+
+  <!-- hexo site css -->
+  
+<link rel="stylesheet" href="/css/base.css">
+<link rel="stylesheet" href="/iconfont/iconfont.css">
+<link rel="stylesheet" href="/css/github-markdown.css">
+<link rel="stylesheet" href="/css/highlight.css">
+
+
+  <!-- jquery3.3.1 -->
+  <script src="https://cdn.bootcss.com/jquery/3.3.1/jquery.min.js"></script>
+
+  <!-- fancybox -->
+  <link href="https://cdn.bootcss.com/fancybox/3.5.2/jquery.fancybox.min.css" rel="stylesheet">
+  <script async src="https://cdn.bootcss.com/fancybox/3.5.2/jquery.fancybox.min.js"></script>
+  
+<script src="/js/fancybox.js"></script>
+
+
+  
+
+<meta name="generator" content="Hexo 5.1.1"></head>
+
+
+  <body>
+    <div id="app">
+      <div class="header">
+  <div class="avatar">
+    <a href="/">
+      <!-- 头像取消懒加载，添加no-lazy -->
+      
+        <img src="/images/avatar.png" alt="">
+      
+    </a>
+    <div class="nickname"><a href="/">Laious</a></div>
+  </div>
+  <div class="navbar">
+    <ul>
+      
+        <li class="nav-item" data-path="/">
+          <a href="/">Home</a>
+        </li>
+      
+        <li class="nav-item" data-path="/archives/">
+          <a href="/archives/">Archives</a>
+        </li>
+      
+        <li class="nav-item" data-path="/categories/">
+          <a href="/categories/">Categories</a>
+        </li>
+      
+        <li class="nav-item" data-path="/tags/">
+          <a href="/tags/">Tags</a>
+        </li>
+      
+        <li class="nav-item" data-path="/about/">
+          <a href="/about/">About</a>
+        </li>
+      
+    </ul>
+  </div>
+</div>
+
+
+<script src="/js/activeNav.js"></script>
+
+
+
+      <div class="flex-container">
+        <!-- 文章详情页，展示文章具体内容，url形式：https://yoursite/文章标题/ -->
+<!-- 同时为「标签tag」，「朋友friend」，「分类categories」，「关于about」页面的承载页面，具体展示取决于page.type -->
+
+
+
+  
+
+  
+
+  
+
+  
+  <!-- 文章内容页 url形式：https://yoursite/文章标题/ -->
+  <div class="container post-details" id="post-details">
+    <div class="post-content">
+      <div class="post-title">Darknet源码中相关层次的具体实现</div>
+      <div class="post-attach">
+        <span class="post-pubtime">
+          <i class="iconfont icon-updatetime" title="更新时间"></i>
+          2021-02-04
+        </span>
+        
+              <span class="post-categories">
+                <i class="iconfont icon-bookmark" title="分类"></i>
+                
+                <span class="span--category">
+                  <a href="/categories/%E4%BB%A3%E7%A0%81%E8%A7%A3%E6%9E%90/" title="代码解析">
+                    <b>#</b> 代码解析
+                  </a>
+                </span>
+                
+              </span>
+          
+              <span class="post-tags">
+                <i class="iconfont icon-tags" title="标签"></i>
+                
+                <span class="span--tag">
+                  <a href="/tags/darknet/" title="darknet">
+                    <b>#</b> darknet
+                  </a>
+                </span>
+                
+              </span>
+          
+      </div>
+      <div class="markdown-body">
+        <hr>
+<p>&ensp;&ensp;看一下darknet中相关层次的具体实现，包括gpu版本的实现和cpu版本的实现。<br>&ensp;&ensp;卷积层具体实现在src/convolutional_layer.c，通过make_convolutional_layer函数进行相应的参数赋值和内存分配，完成相应前向传播等函数的指定。其中卷积层的前向传播函数forward_convolutional_layer实现在src/convolutional_laye.c。主要完成了卷积层前向传播的计算，这里的卷积计算中的卷积核的卷积过程通过gemm方式实现，具体来说就是将卷积核整个展开乘一个矩阵，这个矩阵的每一行代表一个卷积核，每个卷积核内部以行优先的方式逐通道进行展开，形成最终的一行，最终的得到了一个行数为卷积核个数，列数是卷积参数量的矩阵。同样将进行卷积的特征图也展开成另一个矩阵，这个矩阵的展开方式和卷积核展开对应，每一列代表每一次滑动卷积核之后要参与的计算的相应数值，最终得到一个行数是卷积核参数量，列数是输出特征图某个通道上的参数量，也就是out_w*out_h。这样一个卷积运算的乘加过程，就能通过两个矩阵相乘来实现了，关于gemm具体<a target="_blank" rel="noopener" href="https://petewarden.com/2015/04/20/why-gemm-is-at-the-heart-of-deep-learning/">可以参考这里。</a>主要的实现过程就是通过im2col函数完成特征图的矩阵展开，利用gemm函数实现矩阵乘积的计算，然后根据需要结合col2im函数实现矩阵到特征图的转换。通过backward_convolutional_layer函数实现卷积层的反向传播计算，基本的计算过程也是通过gemm函数等来实现的。需要注意的是前向传播中往后面层次传递的是l.output，反向传播中往上一层传递的是相应的l.delta也就是损失函数相对于当前层input的偏导数。通过update_convolutional_layer完成相应的参数更新，这里cpu版本中实现的是动量梯度下降。卷积层相关计算的gpu版本，具体实现在convolutional_kernels.cu中，需要注意的是在darknet中，关于grid的划分，不通层次根据相应的计算划分方式有差别，但是每一个block中固定512个线程，这个在include/darknet.h中声明。然后具体的gpu版本实现的计算流程和cpu版本类似，将im2col和gemm通过cuda多线程的方式实现在gpu上进行运算。<br>&ensp;&ensp;池化层，max_pool和avg_pool的实现在src/maxpool_layer.c和src/avgpool_layer.c层，cpu版本的实现利用循环遍历计算相应的区域的池化结果，gpu版本的计算需要注意相应的grid的划分，具体参考相应的cuda核函数的实现。<br>&ensp;&ensp;激活函数的实现参考相应的实现方式，主要注意gpu版本里面的grid的划分。<br>&ensp;&ensp;注意一下softmax层的实现细节，具体要注意的地方在src/blas.c中的softmax函数，主要是需要防止数据上下溢出和计算过log(softmax)的时候出现log(0)的情况，具体逻辑<a target="_blank" rel="noopener" href="https://www.cnblogs.com/deepllz/p/9046157.html">参考。</a><br>&ensp;&ensp;然后就是相应的rnn层的实现，具体细节参考代码，这里讲一下需要注意的地方，相关的rnn层基本上都是通过其他层次结合实现的，比如最简单的rnn是通过多个全连接层实现的内部计算。再往后面就是rnn层中不同step间隐藏状态和多个rnn层中传递的数据之间要注意区分清楚。<br>&ensp;&ensp;再说一下卷积层的实现，除了gemm以外还有另一种基于gemm的优化版本，效果更好一写，具体参考<a target="_blank" rel="noopener" href="https://www.cnblogs.com/shine-lee/p/10906535.html">winograd的具体逻辑。</a><a target="_blank" rel="noopener" href="https://mp.weixin.qq.com/s/lqVsMDutBwsjiiM_NkGsAg">以及相关的im2col的优化等。</a><br>&ensp;&ensp;还有就是bn层的实现在src/normalization_layer.c中，具体的细节也值得结合相应的原理细看，将实现过程和数学推导结合对应起来。</p>
+
+      </div>
+      
+        <div class="prev-or-next">
+          <div class="post-foot-next">
+            
+              <a href="/2021/02/03/Darknet%E6%BA%90%E7%A0%81%E4%B8%AD%E8%AE%AD%E7%BB%83%E6%8E%A8%E7%90%86%E7%9A%84%E5%AE%9E%E7%8E%B0%E9%80%BB%E8%BE%91/" target="_self">
+                <i class="iconfont icon-chevronleft"></i>
+                <span>上一页</span>
+              </a>
+            
+          </div>
+          <div class="post-attach">
+            <span class="post-pubtime">
+              <i class="iconfont icon-updatetime" title="更新时间"></i>
+              2021-02-04
+            </span>
+            
+                  <span class="post-categories">
+                    <i class="iconfont icon-bookmark" title="分类"></i>
+                    
+                    <span class="span--category">
+                      <a href="/categories/%E4%BB%A3%E7%A0%81%E8%A7%A3%E6%9E%90/" title="代码解析">
+                        <b>#</b> 代码解析
+                      </a>
+                    </span>
+                    
+                  </span>
+              
+                  <span class="post-tags">
+                    <i class="iconfont icon-tags" title="标签"></i>
+                    
+                    <span class="span--tag">
+                      <a href="/tags/darknet/" title="darknet">
+                        <b>#</b> darknet
+                      </a>
+                    </span>
+                    
+                  </span>
+              
+          </div>
+          <div class="post-foot-prev">
+            
+              <a href="/2021/03/04/TensorRT%E7%9A%84%E7%9B%B8%E5%85%B3%E5%86%85%E5%AE%B9/" target="_self">
+                <span>下一页</span>
+                <i class="iconfont icon-chevronright"></i>
+              </a>
+            
+          </div>
+        </div>
+      
+    </div>
+    
+
+    
+  </div>
+
+
+        <div class="footer">
+  <div class="social">
+    <ul>
+      
+        <li>
+          <a title="github" target="_blank" rel="noopener" href="https://github.com/laiou">
+            <i class="iconfont icon-github"></i>
+          </a>
+        </li>
+      
+        <li>
+          <a title="email" href="zs2281475@163.com">
+            <i class="iconfont icon-envelope"></i>
+          </a>
+        </li>
+      
+    </ul>
+  </div>
+  
+    <div class="footer-more">
+      <a target="_blank" rel="noopener" href="https://github.com/laiou">© 2019 — 2020  Laiuos</a>
+    </div>
+  
+    <div class="footer-more">
+      <a target="_blank" rel="noopener" href="https://creativecommons.org/licenses/by-nc-nd/4.0/">All content under CC BY-NC-ND 4.0</a>
+    </div>
+  
+</div>
+
+      </div>
+
+      <div class="back-to-top hidden">
+  <a href="javascript: void(0)">
+    <i class="iconfont icon-chevronup"></i>
+  </a>
+</div>
+
+
+<script src="/js/backtotop.js"></script>
+
+
+
+      
+
+
+    </div>
+  </body>
+</html>

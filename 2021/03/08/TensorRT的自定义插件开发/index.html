@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+  <head>
+  <meta charset="utf-8">
+  <meta name="author" content="zchengsite, 1451426471@qq.com" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  
+  
+  <title>TensorRT的自定义插件开发 | Blog</title>
+
+  
+    <link rel="apple-touch-icon" href="/images/favicon.png">
+    <link rel="icon" href="/images/favicon.png">
+  
+
+  <!-- Raleway-Font -->
+  <link href="https://fonts.googleapis.com/css?family=Raleway&display=swap" rel="stylesheet">
+
+  <!-- hexo site css -->
+  
+<link rel="stylesheet" href="/css/base.css">
+<link rel="stylesheet" href="/iconfont/iconfont.css">
+<link rel="stylesheet" href="/css/github-markdown.css">
+<link rel="stylesheet" href="/css/highlight.css">
+
+
+  <!-- jquery3.3.1 -->
+  <script src="https://cdn.bootcss.com/jquery/3.3.1/jquery.min.js"></script>
+
+  <!-- fancybox -->
+  <link href="https://cdn.bootcss.com/fancybox/3.5.2/jquery.fancybox.min.css" rel="stylesheet">
+  <script async src="https://cdn.bootcss.com/fancybox/3.5.2/jquery.fancybox.min.js"></script>
+  
+<script src="/js/fancybox.js"></script>
+
+
+  
+
+<meta name="generator" content="Hexo 5.1.1"></head>
+
+
+  <body>
+    <div id="app">
+      <div class="header">
+  <div class="avatar">
+    <a href="/">
+      <!-- 头像取消懒加载，添加no-lazy -->
+      
+        <img src="/images/avatar.png" alt="">
+      
+    </a>
+    <div class="nickname"><a href="/">Laious</a></div>
+  </div>
+  <div class="navbar">
+    <ul>
+      
+        <li class="nav-item" data-path="/">
+          <a href="/">Home</a>
+        </li>
+      
+        <li class="nav-item" data-path="/archives/">
+          <a href="/archives/">Archives</a>
+        </li>
+      
+        <li class="nav-item" data-path="/categories/">
+          <a href="/categories/">Categories</a>
+        </li>
+      
+        <li class="nav-item" data-path="/tags/">
+          <a href="/tags/">Tags</a>
+        </li>
+      
+        <li class="nav-item" data-path="/about/">
+          <a href="/about/">About</a>
+        </li>
+      
+    </ul>
+  </div>
+</div>
+
+
+<script src="/js/activeNav.js"></script>
+
+
+
+      <div class="flex-container">
+        <!-- 文章详情页，展示文章具体内容，url形式：https://yoursite/文章标题/ -->
+<!-- 同时为「标签tag」，「朋友friend」，「分类categories」，「关于about」页面的承载页面，具体展示取决于page.type -->
+
+
+
+  
+
+  
+
+  
+
+  
+  <!-- 文章内容页 url形式：https://yoursite/文章标题/ -->
+  <div class="container post-details" id="post-details">
+    <div class="post-content">
+      <div class="post-title">TensorRT的自定义插件开发</div>
+      <div class="post-attach">
+        <span class="post-pubtime">
+          <i class="iconfont icon-updatetime" title="更新时间"></i>
+          2021-03-08
+        </span>
+        
+              <span class="post-categories">
+                <i class="iconfont icon-bookmark" title="分类"></i>
+                
+                <span class="span--category">
+                  <a href="/categories/TensorRT/" title="TensorRT">
+                    <b>#</b> TensorRT
+                  </a>
+                </span>
+                
+              </span>
+          
+              <span class="post-tags">
+                <i class="iconfont icon-tags" title="标签"></i>
+                
+                <span class="span--tag">
+                  <a href="/tags/TensorRT/" title="TensorRT">
+                    <b>#</b> TensorRT
+                  </a>
+                </span>
+                
+              </span>
+          
+      </div>
+      <div class="markdown-body">
+        <hr>
+<p>&ensp;&ensp;TensorRT中支持自定义插件开发，可以将某些模型中TensorRT暂时不支持的层次写成自定义插件的形式。这里看一下具体的实现过程。<br>&ensp;&ensp;一个完整的TensorRT插件大概包含5个文件，依次是NVinferPlugin.h，kernel.h，pluginkernel.cu，customplugin.h，customplugin.cpp，其中NVinferPlugin.h中只有一个注册插件的操作，这个文件具体需不需要要看具体的情况，实际上使用自定义插件的方式分两种，一种是将自定义插件编译成一个单独的so文件，然后在应用程序中显示的调用这个so，比如利用ctypes.CDLL等，这个时候是需要这个NVinferPlugin.h文件来一起编译的。另外一种方式是在官方的plubin库里面把自定义的插件添加进去，这时候不再需要单独的NVinferPlugin.h，因为已经包含在官方的include中了，但是这个时候要注意的是插件其他几个文件要按照官方plugin库的格式去存放，将原本的kernel.h中的内容添加到plugin/kernel/kernel.g中，然后对应的pluginkernel.cu文件也要放到kernel文件夹下，以及将相应的插件声明等根据提示补全到对应的位置上。然后调整相应的makeile,重新编译plugin库，将新编译的plugin.so文件替换掉原本tensorrt安装包中的libnvinfer_plugin.so.7(如果是其他版本的化，后面的数字跟着版本号)就可以了。<br>&ensp;&ensp;具体的customplugin.h中实际上就只有两个函数的声明（不同版本有差别，tensorrt7中自定义插件只需要重写两个函数了），也就是自定义插件需要继承的两个函数IPluginCreator和IPluginV2（具体继承哪一个看需求参考<a target="_blank" rel="noopener" href="https://docs.nvidia.com/deeplearning/tensorrt/developer-guide/index.html#extending">官方文档。</a>）然后实现相应的虚函数就可以了，不通的插件功能不通，实现不一样，但是要实现的虚函数基本上差不多。具体看一下相应的代码：</p>
+<pre><code>#ifndef CUSTOM_PLUGIN_H
+#define CUSTOM_PLUGIN_H
+
+#include &quot;NvInferPlugin.h&quot;
+#include &lt;string&gt;
+#include &lt;vector&gt;
+
+
+using namespace nvinfer1;
+//自定义插件需要扩展IPluginV2和IPluginCreator类
+//声明新的插件类继承IPluginV2
+class CustomPlugin : public IPluginV2
+&#123;
+//定义相关的公有成员，不同插件基本一致，只是具体实现不一样
+public:
+//这里声明的函数的具体实现都在customClipPlugin.cpp中
+//定义相关的构造函数，这里定义两种构造函数，根据输入的参数来判断用哪一个
+CustomPlugin(const std::string name, float clipMin, float clipMax);
+
+CustomPlugin(const std::string name, const void* data, size_t length);
+
+//默认的构造函数要删除
+CustomPlugin() = delete;
+//这里的noexcept表示该函数不会抛出异常，override表示当前函数重写了基类中的虚函数，而这里的const表示这个函数不会修改数据成员
+//这个函数用来返回相应插件op操作返回的tensor数量
+int getNbOutputs() const noexcept override;
+//这里声明一个函数获取输出的维度
+Dims getOutputDimensions(int index, const Dims* inputs, int nbInputDims) noexcept override;
+//初始化
+int initialize() noexcept override;
+//停止
+void terminate() noexcept override;
+//获取工作空间的大小，可以直接引用整个网络的工作空间，也可以自己开辟新的，但是如果是自己开辟的化，注意释放
+size_t getWorkspaceSize(int) const noexcept override &#123; return 0; &#125;;
+//实际插件操作的执行函数
+int enqueue(int batchSize, const void* const* inputs, void** outputs, void* workspace, cudaStream_t stream) noexcept override;
+//获取序列化的尺寸
+size_t getSerializationSize() const noexcept override;
+//序列化函数，用于将插件相关参数保存到文件
+void serialize(void* buffer) const noexcept override;
+//配置相应的参数和格式等等
+void configureWithFormat(const Dims* inputDims, int nbInputs, const Dims* outputDims, int nbOutputs, DataType type, PluginFormat format, int maxBatchSize) noexcept override;
+//判断数据格式是否支持
+bool supportsFormat(DataType type, PluginFormat format) const noexcept override;
+//获取当前plugin的类型
+const char* getPluginType() const noexcept override;
+//获取当前插件类型的版本
+const char* getPluginVersion() const noexcept override;
+//销毁插件
+void destroy() noexcept override;
+//复制当前插件
+nvinfer1::IPluginV2* clone() const noexcept override;
+//设置插件的命名空间
+void setPluginNamespace(const char* pluginNamespace) noexcept override;
+//获取插件的命名空间
+const char* getPluginNamespace() const noexcept override;
+
+private:
+//私有成员变量，一般根据插件不同而不同
+//这里有相应的层次名称
+const std::string mLayerName;
+//插件参数
+float mMin, mMax;
+//输入数据的尺寸
+size_t mInputVolume;
+//命名空间
+std::string mNamespace;
+&#125;;
+//继承的IPluginCreator类
+class CustomPluginCreator : public IPluginCreator
+&#123;
+public:
+//构造函数
+CustomPluginCreator();
+//获取插件的名称
+const char* getPluginName() const noexcept override;
+//获取插件版本
+const char* getPluginVersion() const noexcept override;
+//获取存储插件参数的地址
+const PluginFieldCollection* getFieldNames() noexcept override;
+//创建插件
+IPluginV2* createPlugin(const char* name, const PluginFieldCollection* fc) noexcept override;
+//反序列化插件
+IPluginV2* deserializePlugin(const char* name, const void* serialData, size_t serialLength) noexcept override;
+//设置插件的命名空间
+void setPluginNamespace(const char* pluginNamespace) noexcept override;
+//获取插件命名空间
+const char* getPluginNamespace() const noexcept override;
+
+private:
+//存储插件相关参数的结构
+static PluginFieldCollection mFC;
+//相关参数
+static std::vector&lt;PluginField&gt; mPluginAttributes;
+//命名空间
+std::string mNamespace;
+&#125;;
+
+#endif</code></pre>
+<p>&ensp;&ensp;然后就是customplugin.cpp中对上述声明的函数进行实现，具体的要看相应插件的功能了。实现了上面的函数之后enqueue函数执行具体的插件操作，将这里面的计算实际上基本是在gpu上完成，所以，这里的调用首先要在kernel.h中声明，然后在kernel.cu中实现。不同的插件实现细节可以参考官方开源的相关代码，关于Tensorrt的插件的流程也可以<a target="_blank" rel="noopener" href="https://zhuanlan.zhihu.com/p/297002406">参考这里。</a></p>
+
+      </div>
+      
+        <div class="prev-or-next">
+          <div class="post-foot-next">
+            
+              <a href="/2021/03/06/Darknet%E4%B8%ADweights%E6%96%87%E4%BB%B6%E7%9A%84%E6%A0%BC%E5%BC%8F/" target="_self">
+                <i class="iconfont icon-chevronleft"></i>
+                <span>上一页</span>
+              </a>
+            
+          </div>
+          <div class="post-attach">
+            <span class="post-pubtime">
+              <i class="iconfont icon-updatetime" title="更新时间"></i>
+              2021-03-08
+            </span>
+            
+                  <span class="post-categories">
+                    <i class="iconfont icon-bookmark" title="分类"></i>
+                    
+                    <span class="span--category">
+                      <a href="/categories/TensorRT/" title="TensorRT">
+                        <b>#</b> TensorRT
+                      </a>
+                    </span>
+                    
+                  </span>
+              
+                  <span class="post-tags">
+                    <i class="iconfont icon-tags" title="标签"></i>
+                    
+                    <span class="span--tag">
+                      <a href="/tags/TensorRT/" title="TensorRT">
+                        <b>#</b> TensorRT
+                      </a>
+                    </span>
+                    
+                  </span>
+              
+          </div>
+          <div class="post-foot-prev">
+            
+              <a href="/2021/03/10/TensorRT%E4%B8%ADint8%E6%A0%A1%E5%87%86%E5%99%A8%E7%9A%84%E5%88%9B%E5%BB%BA/" target="_self">
+                <span>下一页</span>
+                <i class="iconfont icon-chevronright"></i>
+              </a>
+            
+          </div>
+        </div>
+      
+    </div>
+    
+
+    
+  </div>
+
+
+        <div class="footer">
+  <div class="social">
+    <ul>
+      
+        <li>
+          <a title="github" target="_blank" rel="noopener" href="https://github.com/laiou">
+            <i class="iconfont icon-github"></i>
+          </a>
+        </li>
+      
+        <li>
+          <a title="email" href="zs2281475@163.com">
+            <i class="iconfont icon-envelope"></i>
+          </a>
+        </li>
+      
+    </ul>
+  </div>
+  
+    <div class="footer-more">
+      <a target="_blank" rel="noopener" href="https://github.com/laiou">© 2019 — 2020  Laiuos</a>
+    </div>
+  
+    <div class="footer-more">
+      <a target="_blank" rel="noopener" href="https://creativecommons.org/licenses/by-nc-nd/4.0/">All content under CC BY-NC-ND 4.0</a>
+    </div>
+  
+</div>
+
+      </div>
+
+      <div class="back-to-top hidden">
+  <a href="javascript: void(0)">
+    <i class="iconfont icon-chevronup"></i>
+  </a>
+</div>
+
+
+<script src="/js/backtotop.js"></script>
+
+
+
+      
+
+
+    </div>
+  </body>
+</html>

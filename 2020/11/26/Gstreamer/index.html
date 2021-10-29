@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+  <head>
+  <meta charset="utf-8">
+  <meta name="author" content="zchengsite, 1451426471@qq.com" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  
+  
+  <title>Gstreamer | Blog</title>
+
+  
+    <link rel="apple-touch-icon" href="/images/favicon.png">
+    <link rel="icon" href="/images/favicon.png">
+  
+
+  <!-- Raleway-Font -->
+  <link href="https://fonts.googleapis.com/css?family=Raleway&display=swap" rel="stylesheet">
+
+  <!-- hexo site css -->
+  
+<link rel="stylesheet" href="/css/base.css">
+<link rel="stylesheet" href="/iconfont/iconfont.css">
+<link rel="stylesheet" href="/css/github-markdown.css">
+<link rel="stylesheet" href="/css/highlight.css">
+
+
+  <!-- jquery3.3.1 -->
+  <script src="https://cdn.bootcss.com/jquery/3.3.1/jquery.min.js"></script>
+
+  <!-- fancybox -->
+  <link href="https://cdn.bootcss.com/fancybox/3.5.2/jquery.fancybox.min.css" rel="stylesheet">
+  <script async src="https://cdn.bootcss.com/fancybox/3.5.2/jquery.fancybox.min.js"></script>
+  
+<script src="/js/fancybox.js"></script>
+
+
+  
+
+<meta name="generator" content="Hexo 5.1.1"></head>
+
+
+  <body>
+    <div id="app">
+      <div class="header">
+  <div class="avatar">
+    <a href="/">
+      <!-- 头像取消懒加载，添加no-lazy -->
+      
+        <img src="/images/avatar.png" alt="">
+      
+    </a>
+    <div class="nickname"><a href="/">Laious</a></div>
+  </div>
+  <div class="navbar">
+    <ul>
+      
+        <li class="nav-item" data-path="/">
+          <a href="/">Home</a>
+        </li>
+      
+        <li class="nav-item" data-path="/archives/">
+          <a href="/archives/">Archives</a>
+        </li>
+      
+        <li class="nav-item" data-path="/categories/">
+          <a href="/categories/">Categories</a>
+        </li>
+      
+        <li class="nav-item" data-path="/tags/">
+          <a href="/tags/">Tags</a>
+        </li>
+      
+        <li class="nav-item" data-path="/about/">
+          <a href="/about/">About</a>
+        </li>
+      
+    </ul>
+  </div>
+</div>
+
+
+<script src="/js/activeNav.js"></script>
+
+
+
+      <div class="flex-container">
+        <!-- 文章详情页，展示文章具体内容，url形式：https://yoursite/文章标题/ -->
+<!-- 同时为「标签tag」，「朋友friend」，「分类categories」，「关于about」页面的承载页面，具体展示取决于page.type -->
+
+
+
+  
+
+  
+
+  
+
+  
+  <!-- 文章内容页 url形式：https://yoursite/文章标题/ -->
+  <div class="container post-details" id="post-details">
+    <div class="post-content">
+      <div class="post-title">Gstreamer</div>
+      <div class="post-attach">
+        <span class="post-pubtime">
+          <i class="iconfont icon-updatetime" title="更新时间"></i>
+          2020-11-26
+        </span>
+        
+              <span class="post-categories">
+                <i class="iconfont icon-bookmark" title="分类"></i>
+                
+                <span class="span--category">
+                  <a href="/categories/gstreamer/" title="gstreamer">
+                    <b>#</b> gstreamer
+                  </a>
+                </span>
+                
+              </span>
+          
+              <span class="post-tags">
+                <i class="iconfont icon-tags" title="标签"></i>
+                
+                <span class="span--tag">
+                  <a href="/tags/gstreamer/" title="gstreamer">
+                    <b>#</b> gstreamer
+                  </a>
+                </span>
+                
+              </span>
+          
+      </div>
+      <div class="markdown-body">
+        <hr>
+<p>&ensp;&ensp;Gstreamer是一个依附于Glib的多媒体框架。应用程序可以通过管道（Pipeline）的方式，将多媒体处理的各个步骤串联起来，达到预期的效果。</p>
+<ol>
+<li>基本概念<br>&ensp;&ensp;组件（Elements）:Gstreamer通过创建一系列组件，并将他们连接起来，使得数据流在这个被连接的各个组件之间进行传输。形成一个管道（Pipeline）来完成相应的任务。每个组件都有一个特殊的函数接口，实现相应的功能。<br>&ensp;&ensp;箱柜（Bins）与管道（Pipeline）:箱柜（Bins）是一个可以装载组件的容器，而管道（Pipeline）是Bins的一个特殊的子类型，Pipeline可以操作包含在它内部的所有Element。同时Bins本身也是Element的子集，从而能够像操作普通的Element一样操作Bins。进而降低了程序的复杂度。通过改变一个Bins的状态来改变其中所有的Element的状态。Bins可以发送总线（Bus）消息给它的子集组件。Pipeline可以看成一个特殊的Bins。当设置Pipeline的状态为暂停或者播放时，数据流开始流动。且媒体数据也开始处理。一旦开始，Pipeline将在一个单独的线程中运行，直到被停止或者数据播放完毕。<br>&ensp;&ensp;衬垫（Pads）：Pads用于各个组件之间的连接，从而使得数据流能在这样的连接中流动。组件之间依据Pads进行连接，可以把Pads看作Element的插座或者端口。Pads拥有处理特殊数据的能力。一个Pads能够限制数据流类型的通过。两个Element连接成功的条件时：只有在两个Pads允许通过的数据类型一致的时候才会被建立。而数据类型被一个GstCaps来描叙，可以通过 caps negotiation方法来设定。</li>
+<li>组件的各种类型<br>&ensp;&ensp;源组件（Source elements):源组件为Pipeline产生数据比如从磁盘或者设备读取数据。同时源组件不接收数据，仅产生数据。从而源组件只有一个src_pads（源衬垫或者输出衬垫)。<br>&ensp;&ensp;过滤器（filters),转换器（convertors),分流器（demuxers），整流器（muxers），以及编译码器（codecs):这些都是同时拥有输入和输出Pads，从输入Pads得到数据，处理完毕后将数据提供给输出Pads，同时有些Elements根据功能能够同时拥有多个输入和输出Pads.<br>&ensp;&ensp;接收组件：接收组件位于整个Pipeline的末端，它接收数据但是不产生任何数据，实现的功能类似于写磁盘，视频播放，推流等等。通常的接受组件只有Sink_pads(输入衬垫）。<br>&ensp;&ensp;通过输入和输出pads将各种组件连接起来形成相应的pipeline。同时Gstreamer中组件一共有四种状态：GST_STATE_NULL(默认装态），该状态会回收所有被该组件占用的资源。GST_STATE_READY(准备状态),这个状态下的组件会得到所有所需要的全局资源，这些全局资源将会被通过该组件的数据流使用。同时这个状态下数据流仍没有开始被处理，所以数据流的位置信息自动置0，如果数据流之前被打开过，则应该被关闭，且位置信息，特性信息等应该被重新置为初始状态。GST_STATE_PAUSED(暂停状态):这种状态下组件已经开始了对数据流的处理，但是此刻暂停了处理，从而这个状态下组件可以修改流的位置信息，读取或者处理流数据，以及一旦状态变为PLAYING，流可以重新放数据流，这个状态新，时钟是禁止运行的。PAUSED状态下除了不能运行时钟外，其他的与PLAYING状态一摸一样。GST_STATE_PLAYING：PLAYING状态除了运行时钟外和PAUSED状态一摸一样。同时可以利用gst_element_set_statue()来改变一个组件状态，显示改变一个组件的状态，Gstreamer可能会使它在内部经过一些中间状态，比如讲一个组件从NULL状态设置成PLAYING状态，Gstreamer会在内部使得组件经历READY以及PAUSED状态。当处于PLAYING状态时，Pipeline会自动处理数据，不需要任何形式的迭代。Gstreamer会开启一个新线程来处理数据，同时通过总线(Bus)来在Pipeline和应用程序间交互信息。</li>
+<li>箱柜(Bins)<br>&ensp;&ensp;Bins是一种容器组件，可以把其他的组件添加到Bins中，由于Bins本身也是一种组件，从而可以像操作普通组件一样去操作Bins。<br>&ensp;&ensp;Bins允许将一组有连接的组件合成一个逻辑上的大组件。从而不在需要对单个组件进行操作，只要操作Bins即可，当构建复杂应用时，Bins允许将复杂的Pipeline分解成一些小块。同时Bins可以对包含在其中的组件进行管理，它会计算数据怎样流入Bins,并对流入的数据流制定一个最佳的计划。经常用到的一个特殊的bins就是管道(pipeline）,是一种允许对所包含的组件进行安排调度的普通容器，但是顶层的Bins必须是一个Pipeline，因此每个Gstreamer应用程序都至少需要一个Pipeline，当应用程序启动后，Pipeline会自动运行在后台的线程里面。</li>
+<li>总线（Bus)<br>&ensp;&ensp;Bus是一个简单的系统，通过自己的线程机制将一个Pipeline线程的消息分发到一个应用程序里，使用Bus的优势是：当使用Gstreamer的时候，应用程序不需要线程识别，即使Gstreamer已经被加载了多个线程。每一个Pipeline默认包含一个总线，从而应用程序不必在创建总线，只需要在Bus上设置一个类似于对象的信号处理器的消息处理器。当主循环运行时，Bus会轮询这个消息处理器是否存在新的消息，当消息被采集，Bus将会利用对应的回调函数完成任务。<br>&ensp;&ensp;使用Bus的两种方式：运行Glib主循环，然后用侦听器对总线进行侦听，此时Glib主循环将轮询总线上是否存在新的消息，当存在新消息时，Bus会马上通知应用程序。自己侦听Bus消息：使用gst_bus_peek()或者gst_bus_pull()来实现。<br>&ensp;&ensp;因为bus上pipeline和应用程序之间的交互是异步的，所以上面的方式无法适用于实时的情况。如果需要满足实时交互，则可以编写一个新的Gstreamer插件来实现在pipeline中直接触发回调。</li>
+<li>衬垫（Pads)<br>&ensp;&ensp;Pads是elements对外的接口，数据流从一个组件的源衬垫（source_pad)到另一个组件的接受衬垫(sink_pad)，衬垫的功能决定了一个element所能处理的媒体类型。<br>&ensp;&ensp;一个Pads的类型由他的数据导向以及它的时效性决定，Gstreamer定义了两种Pads的数据导向：源衬垫和输出衬垫。数据导向是相对于组件内部来描叙的，elements通过它们的接受衬垫来接收数据，通过它们的源衬垫来输出数据。Pads的时效性有三种类型：永久型，随机型，请求型。永久型的pads会一直存在，随机型的pads只有在某种特定的条件下才会存在（会随即消失的pads也属于随机型），请求型的pads只有在应用程序明确发出请求时才会出现。<br>&ensp;&ensp;动态（随机）Pads:一些组件在被创建时不会立刻产生所有它会用到的Pads。比如demuxer组件，在流中检测到元数据流时，会为每一个元数据流创建动态pads，同样也会在流终止的时候删除改pads。动态pads在demuxer这样的组件中起到了很大的作用。<br>&ensp;&ensp;请求衬垫：组件同样可以拥有多个请求衬垫，这种pads不是自动被创建，而是根据请求被创建的，在多任务组件中用的多。比如tee组件和aggregators组件。aggregators组件可以把多个输入流合并成一个输出流。tee组件则是将一个输入流发送到不同的输出pads，只要应用程序需要另一份数据流，则可以简单地从tee组件请求到一个输出pads。同时还要注意的是当想要将一个组件连接到一个多任务型的组件时，需要请求一个带兼容性的pads。<br>&ensp;&ensp;Pads在一个组件中起到了非常重要的作用，衬垫的功能指的是能够通过或者当前通过衬垫的数据流。<br>&ensp;&ensp;Pads的功能通过GstCaps对象来描述。一个GstCaps对象包含多个或一个GstStructure.一个Gstructure描述一种媒体类型，一个被数据流通过的pads存在功能集，每种功能只包含一个GstStructure结构，结构中都是固定的值。<br>&ensp;&ensp;Pads功能的用途：Pads的caps描述了两个衬垫之间的数据流类型。或者说是它们所支持的数据流类型。主要的用途如下：自动填充，根据组件的功能自动找到可以连接的组件，所有的自动填充器都采用这种方式。兼容性检测：当两个pads连接时，会验证他们是否采用同样的数据格式进行交互，连接并验证两个pads是否兼容的过程称为功能谈判。元数据（Metadata）：通过读取pads的功能，应用程序能够提供有关当前流经pads的正在播放的媒体类型信息。这个信息成为元数据（Metadata)。过滤（Filtering）:应用程序可以通过pads的caps来给两个交互的pads之间的媒体类型加以限制这些被限制的媒体类型的集合应该是两个交互的pads共同支持的格式集的子集。<br>&ensp;&ensp;精灵衬垫（Ghost pads):<br>属于Bins的衬垫，bins本身也是组件，通过ghost pads来像操作组件一样操作bins，ghost bins来自于bins中的某些组件，同样也可以在bins中被直接访问。</li>
+<li>缓冲区（Buffers)和事件（Events)<br>&ensp;&ensp;Pipeline的数据流由一组缓冲区和事件组成，缓冲区包括实际的Pipeline数据，事件包括控制信息，例如寻找信息和流的终止信号。所有这些数据流在运行的时候自动流过管道。<br>&ensp;&ensp;缓冲区包含了所创建的Pipeline里面的数据流，通常一个源组件会创建一个新的缓冲区，同时组件还将会把缓冲区里面的数据传递到下一个组件。当使用Gstreamer底层构造来创建一个媒体管道的时候，不需要自己来处理缓冲区，组件将会自动处理这些缓冲区。一个Buffers主要由一下部分组成：指向某块内存的指针。内存大小。缓冲区的时间戳。一个引用计数，指出了缓冲区所使用的组件数，没有组件可引用的时候，这个引用将用来销毁缓冲区。<br>&ensp;&ensp;事件是一系列的控制粒子，随着缓冲区被发送到pipeline的上游和下游。下游事件通知流状态相同的组件，可能的events包括中断，flush，流的终止信号等。在应用程序和组件的交互以及事件与事件之间的交互中，上游事件被用于改变管道中数据流的状态，例如查找等。对于应用程序来说，上游事件非常重要，下游事件则是为了说明获取更加完善的数据概念上的图像。</li>
+</ol>
+
+      </div>
+      
+        <div class="prev-or-next">
+          <div class="post-foot-next">
+            
+              <a href="/2020/11/24/Hls%E7%9B%B8%E5%85%B3%E5%86%85%E5%AE%B9/" target="_self">
+                <i class="iconfont icon-chevronleft"></i>
+                <span>上一页</span>
+              </a>
+            
+          </div>
+          <div class="post-attach">
+            <span class="post-pubtime">
+              <i class="iconfont icon-updatetime" title="更新时间"></i>
+              2020-11-26
+            </span>
+            
+                  <span class="post-categories">
+                    <i class="iconfont icon-bookmark" title="分类"></i>
+                    
+                    <span class="span--category">
+                      <a href="/categories/gstreamer/" title="gstreamer">
+                        <b>#</b> gstreamer
+                      </a>
+                    </span>
+                    
+                  </span>
+              
+                  <span class="post-tags">
+                    <i class="iconfont icon-tags" title="标签"></i>
+                    
+                    <span class="span--tag">
+                      <a href="/tags/gstreamer/" title="gstreamer">
+                        <b>#</b> gstreamer
+                      </a>
+                    </span>
+                    
+                  </span>
+              
+          </div>
+          <div class="post-foot-prev">
+            
+              <a href="/2020/12/03/Deepstream%E4%BB%A3%E7%A0%81%E8%B5%B0%E8%AF%BB/" target="_self">
+                <span>下一页</span>
+                <i class="iconfont icon-chevronright"></i>
+              </a>
+            
+          </div>
+        </div>
+      
+    </div>
+    
+
+    
+  </div>
+
+
+        <div class="footer">
+  <div class="social">
+    <ul>
+      
+        <li>
+          <a title="github" target="_blank" rel="noopener" href="https://github.com/laiou">
+            <i class="iconfont icon-github"></i>
+          </a>
+        </li>
+      
+        <li>
+          <a title="email" href="zs2281475@163.com">
+            <i class="iconfont icon-envelope"></i>
+          </a>
+        </li>
+      
+    </ul>
+  </div>
+  
+    <div class="footer-more">
+      <a target="_blank" rel="noopener" href="https://github.com/laiou">© 2019 — 2020  Laiuos</a>
+    </div>
+  
+    <div class="footer-more">
+      <a target="_blank" rel="noopener" href="https://creativecommons.org/licenses/by-nc-nd/4.0/">All content under CC BY-NC-ND 4.0</a>
+    </div>
+  
+</div>
+
+      </div>
+
+      <div class="back-to-top hidden">
+  <a href="javascript: void(0)">
+    <i class="iconfont icon-chevronup"></i>
+  </a>
+</div>
+
+
+<script src="/js/backtotop.js"></script>
+
+
+
+      
+
+
+    </div>
+  </body>
+</html>

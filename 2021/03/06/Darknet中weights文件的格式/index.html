@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+  <head>
+  <meta charset="utf-8">
+  <meta name="author" content="zchengsite, 1451426471@qq.com" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  
+  
+  <title>Darknet中weights文件的格式 | Blog</title>
+
+  
+    <link rel="apple-touch-icon" href="/images/favicon.png">
+    <link rel="icon" href="/images/favicon.png">
+  
+
+  <!-- Raleway-Font -->
+  <link href="https://fonts.googleapis.com/css?family=Raleway&display=swap" rel="stylesheet">
+
+  <!-- hexo site css -->
+  
+<link rel="stylesheet" href="/css/base.css">
+<link rel="stylesheet" href="/iconfont/iconfont.css">
+<link rel="stylesheet" href="/css/github-markdown.css">
+<link rel="stylesheet" href="/css/highlight.css">
+
+
+  <!-- jquery3.3.1 -->
+  <script src="https://cdn.bootcss.com/jquery/3.3.1/jquery.min.js"></script>
+
+  <!-- fancybox -->
+  <link href="https://cdn.bootcss.com/fancybox/3.5.2/jquery.fancybox.min.css" rel="stylesheet">
+  <script async src="https://cdn.bootcss.com/fancybox/3.5.2/jquery.fancybox.min.js"></script>
+  
+<script src="/js/fancybox.js"></script>
+
+
+  
+
+<meta name="generator" content="Hexo 5.1.1"></head>
+
+
+  <body>
+    <div id="app">
+      <div class="header">
+  <div class="avatar">
+    <a href="/">
+      <!-- 头像取消懒加载，添加no-lazy -->
+      
+        <img src="/images/avatar.png" alt="">
+      
+    </a>
+    <div class="nickname"><a href="/">Laious</a></div>
+  </div>
+  <div class="navbar">
+    <ul>
+      
+        <li class="nav-item" data-path="/">
+          <a href="/">Home</a>
+        </li>
+      
+        <li class="nav-item" data-path="/archives/">
+          <a href="/archives/">Archives</a>
+        </li>
+      
+        <li class="nav-item" data-path="/categories/">
+          <a href="/categories/">Categories</a>
+        </li>
+      
+        <li class="nav-item" data-path="/tags/">
+          <a href="/tags/">Tags</a>
+        </li>
+      
+        <li class="nav-item" data-path="/about/">
+          <a href="/about/">About</a>
+        </li>
+      
+    </ul>
+  </div>
+</div>
+
+
+<script src="/js/activeNav.js"></script>
+
+
+
+      <div class="flex-container">
+        <!-- 文章详情页，展示文章具体内容，url形式：https://yoursite/文章标题/ -->
+<!-- 同时为「标签tag」，「朋友friend」，「分类categories」，「关于about」页面的承载页面，具体展示取决于page.type -->
+
+
+
+  
+
+  
+
+  
+
+  
+  <!-- 文章内容页 url形式：https://yoursite/文章标题/ -->
+  <div class="container post-details" id="post-details">
+    <div class="post-content">
+      <div class="post-title">Darknet中weights文件的格式</div>
+      <div class="post-attach">
+        <span class="post-pubtime">
+          <i class="iconfont icon-updatetime" title="更新时间"></i>
+          2021-03-06
+        </span>
+        
+              <span class="post-categories">
+                <i class="iconfont icon-bookmark" title="分类"></i>
+                
+                <span class="span--category">
+                  <a href="/categories/Datknet/" title="Datknet">
+                    <b>#</b> Datknet
+                  </a>
+                </span>
+                
+              </span>
+          
+              <span class="post-tags">
+                <i class="iconfont icon-tags" title="标签"></i>
+                
+                <span class="span--tag">
+                  <a href="/tags/Darknet/" title="Darknet">
+                    <b>#</b> Darknet
+                  </a>
+                </span>
+                
+              </span>
+          
+      </div>
+      <div class="markdown-body">
+        <hr>
+<p>&ensp;&ensp;这里看一下Darknet中weights文件的存储格式，从src/parse.c中的save_weights和save_weights_upto函数能看出：</p>
+<pre><code>void save_weights(network *net, char *filename)
+&#123;
+save_weights_upto(net, filename, net-&gt;n);
+&#125;
+void save_weights_upto(network *net, char *filename, int cutoff)
+&#123;
+#ifdef GPU
+if(net-&gt;gpu_index &gt;= 0)&#123;
+    cuda_set_device(net-&gt;gpu_index);
+&#125;
+#endif
+fprintf(stderr, &quot;Saving weights to %s\n&quot;, filename);
+FILE *fp = fopen(filename, &quot;wb&quot;);
+if(!fp) file_error(filename);
+int major = 0;
+int minor = 2;
+int revision = 0;
+fwrite(&amp;major, sizeof(int), 1, fp);
+fwrite(&amp;minor, sizeof(int), 1, fp);
+fwrite(&amp;revision, sizeof(int), 1, fp);
+fwrite(net-&gt;seen, sizeof(size_t), 1, fp);
+int i;
+for(i = 0; i &lt; net-&gt;n &amp;&amp; i &lt; cutoff; ++i)&#123;
+    layer l = net-&gt;layers[i];
+    if (l.dontsave) continue;
+    if(l.type == CONVOLUTIONAL || l.type == DECONVOLUTIONAL)&#123;
+        save_convolutional_weights(l, fp);
+    &#125; if(l.type == CONNECTED)&#123;
+        save_connected_weights(l, fp);
+    &#125; if(l.type == BATCHNORM)&#123;
+        save_batchnorm_weights(l, fp);
+    &#125; if(l.type == RNN)&#123;
+        save_connected_weights(*(l.input_layer), fp);
+        save_connected_weights(*(l.self_layer), fp);
+        save_connected_weights(*(l.output_layer), fp);
+    &#125; if (l.type == LSTM) &#123;
+        save_connected_weights(*(l.wi), fp);
+        save_connected_weights(*(l.wf), fp);
+        save_connected_weights(*(l.wo), fp);
+        save_connected_weights(*(l.wg), fp);
+        save_connected_weights(*(l.ui), fp);
+        save_connected_weights(*(l.uf), fp);
+        save_connected_weights(*(l.uo), fp);
+        save_connected_weights(*(l.ug), fp);
+    &#125; if (l.type == GRU) &#123;
+        if(1)&#123;
+            save_connected_weights(*(l.wz), fp);
+            save_connected_weights(*(l.wr), fp);
+            save_connected_weights(*(l.wh), fp);
+            save_connected_weights(*(l.uz), fp);
+            save_connected_weights(*(l.ur), fp);
+            save_connected_weights(*(l.uh), fp);
+        &#125;else&#123;
+            save_connected_weights(*(l.reset_layer), fp);
+            save_connected_weights(*(l.update_layer), fp);
+            save_connected_weights(*(l.state_layer), fp);
+        &#125;
+    &#125;  if(l.type == CRNN)&#123;
+        save_convolutional_weights(*(l.input_layer), fp);
+        save_convolutional_weights(*(l.self_layer), fp);
+        save_convolutional_weights(*(l.output_layer), fp);
+    &#125; if(l.type == LOCAL)&#123;
+#ifdef GPU
+        if(gpu_index &gt;= 0)&#123;
+            pull_local_layer(l);
+        &#125;
+#endif
+        int locations = l.out_w*l.out_h;
+        int size = l.size*l.size*l.c*l.n*locations;
+        fwrite(l.biases, sizeof(float), l.outputs, fp);
+        fwrite(l.weights, sizeof(float), size, fp);
+    &#125;
+&#125;
+fclose(fp);
+&#125;</code></pre>
+<p>&ensp;&ensp;根据不同的层次结合cfg配置中的层次顺序依次进行存储，然后就是最开始的三个int类型的值分别是major，minor，revision，然后还有一个size_t长度的net-&gt;seen值，一般int是4字节，size_t的长度根据具体平台有差别，size_t在32位系统中占4个字节，而在64位系统占8个字节。<br>&ensp;&ensp;再往后就是具体的权重了，需要注意的是卷积层先存储偏置，然后在存储权重，还有就是bn层的参数存储顺序，都可以参考save_convolutional_weights(l, fp)函数：</p>
+<pre><code>void save_convolutional_weights(layer l, FILE *fp)
+&#123;
+if(l.binary)&#123;
+//save_convolutional_weights_binary(l, fp);
+//return;
+ &#125;
+    #ifdef GPU
+    if(gpu_index &gt;= 0)&#123;
+    pull_convolutional_layer(l);
+    &#125;
+    #endif
+    int num = l.nweights;
+    fwrite(l.biases, sizeof(float), l.n, fp);
+    if (l.batch_normalize)&#123;
+    fwrite(l.scales, sizeof(float), l.n, fp);
+    fwrite(l.rolling_mean, sizeof(float), l.n, fp);
+    fwrite(l.rolling_variance, sizeof(float), l.n, fp);
+ &#125;
+    fwrite(l.weights, sizeof(float), num, fp);
+&#125;</code></pre>
+<p>&ensp;&ensp;其中偏置和权重都是float类型，bn层参数存储顺序依次是scales，rolling_mean，rolling_variance，也都是float类型，也是4字节，然后就是如果通过文本编辑器打开相应的weights文件，按照16进制显示的话，还要注意的是这时候的数据是低位在前，高位在后。</p>
+
+      </div>
+      
+        <div class="prev-or-next">
+          <div class="post-foot-next">
+            
+              <a href="/2021/03/04/TensorRT%E7%9A%84%E7%9B%B8%E5%85%B3%E5%86%85%E5%AE%B9/" target="_self">
+                <i class="iconfont icon-chevronleft"></i>
+                <span>上一页</span>
+              </a>
+            
+          </div>
+          <div class="post-attach">
+            <span class="post-pubtime">
+              <i class="iconfont icon-updatetime" title="更新时间"></i>
+              2021-03-06
+            </span>
+            
+                  <span class="post-categories">
+                    <i class="iconfont icon-bookmark" title="分类"></i>
+                    
+                    <span class="span--category">
+                      <a href="/categories/Datknet/" title="Datknet">
+                        <b>#</b> Datknet
+                      </a>
+                    </span>
+                    
+                  </span>
+              
+                  <span class="post-tags">
+                    <i class="iconfont icon-tags" title="标签"></i>
+                    
+                    <span class="span--tag">
+                      <a href="/tags/Darknet/" title="Darknet">
+                        <b>#</b> Darknet
+                      </a>
+                    </span>
+                    
+                  </span>
+              
+          </div>
+          <div class="post-foot-prev">
+            
+              <a href="/2021/03/08/TensorRT%E7%9A%84%E8%87%AA%E5%AE%9A%E4%B9%89%E6%8F%92%E4%BB%B6%E5%BC%80%E5%8F%91/" target="_self">
+                <span>下一页</span>
+                <i class="iconfont icon-chevronright"></i>
+              </a>
+            
+          </div>
+        </div>
+      
+    </div>
+    
+
+    
+  </div>
+
+
+        <div class="footer">
+  <div class="social">
+    <ul>
+      
+        <li>
+          <a title="github" target="_blank" rel="noopener" href="https://github.com/laiou">
+            <i class="iconfont icon-github"></i>
+          </a>
+        </li>
+      
+        <li>
+          <a title="email" href="zs2281475@163.com">
+            <i class="iconfont icon-envelope"></i>
+          </a>
+        </li>
+      
+    </ul>
+  </div>
+  
+    <div class="footer-more">
+      <a target="_blank" rel="noopener" href="https://github.com/laiou">© 2019 — 2020  Laiuos</a>
+    </div>
+  
+    <div class="footer-more">
+      <a target="_blank" rel="noopener" href="https://creativecommons.org/licenses/by-nc-nd/4.0/">All content under CC BY-NC-ND 4.0</a>
+    </div>
+  
+</div>
+
+      </div>
+
+      <div class="back-to-top hidden">
+  <a href="javascript: void(0)">
+    <i class="iconfont icon-chevronup"></i>
+  </a>
+</div>
+
+
+<script src="/js/backtotop.js"></script>
+
+
+
+      
+
+
+    </div>
+  </body>
+</html>

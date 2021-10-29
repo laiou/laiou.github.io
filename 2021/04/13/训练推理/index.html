@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+  <head>
+  <meta charset="utf-8">
+  <meta name="author" content="zchengsite, 1451426471@qq.com" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  
+  
+  <title>模型训练推理调优的一些总结 | Blog</title>
+
+  
+    <link rel="apple-touch-icon" href="/images/favicon.png">
+    <link rel="icon" href="/images/favicon.png">
+  
+
+  <!-- Raleway-Font -->
+  <link href="https://fonts.googleapis.com/css?family=Raleway&display=swap" rel="stylesheet">
+
+  <!-- hexo site css -->
+  
+<link rel="stylesheet" href="/css/base.css">
+<link rel="stylesheet" href="/iconfont/iconfont.css">
+<link rel="stylesheet" href="/css/github-markdown.css">
+<link rel="stylesheet" href="/css/highlight.css">
+
+
+  <!-- jquery3.3.1 -->
+  <script src="https://cdn.bootcss.com/jquery/3.3.1/jquery.min.js"></script>
+
+  <!-- fancybox -->
+  <link href="https://cdn.bootcss.com/fancybox/3.5.2/jquery.fancybox.min.css" rel="stylesheet">
+  <script async src="https://cdn.bootcss.com/fancybox/3.5.2/jquery.fancybox.min.js"></script>
+  
+<script src="/js/fancybox.js"></script>
+
+
+  
+
+<meta name="generator" content="Hexo 5.1.1"></head>
+
+
+  <body>
+    <div id="app">
+      <div class="header">
+  <div class="avatar">
+    <a href="/">
+      <!-- 头像取消懒加载，添加no-lazy -->
+      
+        <img src="/images/avatar.png" alt="">
+      
+    </a>
+    <div class="nickname"><a href="/">Laious</a></div>
+  </div>
+  <div class="navbar">
+    <ul>
+      
+        <li class="nav-item" data-path="/">
+          <a href="/">Home</a>
+        </li>
+      
+        <li class="nav-item" data-path="/archives/">
+          <a href="/archives/">Archives</a>
+        </li>
+      
+        <li class="nav-item" data-path="/categories/">
+          <a href="/categories/">Categories</a>
+        </li>
+      
+        <li class="nav-item" data-path="/tags/">
+          <a href="/tags/">Tags</a>
+        </li>
+      
+        <li class="nav-item" data-path="/about/">
+          <a href="/about/">About</a>
+        </li>
+      
+    </ul>
+  </div>
+</div>
+
+
+<script src="/js/activeNav.js"></script>
+
+
+
+      <div class="flex-container">
+        <!-- 文章详情页，展示文章具体内容，url形式：https://yoursite/文章标题/ -->
+<!-- 同时为「标签tag」，「朋友friend」，「分类categories」，「关于about」页面的承载页面，具体展示取决于page.type -->
+
+
+
+  
+
+  
+
+  
+
+  
+  <!-- 文章内容页 url形式：https://yoursite/文章标题/ -->
+  <div class="container post-details" id="post-details">
+    <div class="post-content">
+      <div class="post-title">模型训练推理调优的一些总结</div>
+      <div class="post-attach">
+        <span class="post-pubtime">
+          <i class="iconfont icon-updatetime" title="更新时间"></i>
+          2021-04-13
+        </span>
+        
+              <span class="post-categories">
+                <i class="iconfont icon-bookmark" title="分类"></i>
+                
+                <span class="span--category">
+                  <a href="/categories/%E8%AE%AD%E7%BB%83%E6%8E%A8%E7%90%86/" title="训练推理">
+                    <b>#</b> 训练推理
+                  </a>
+                </span>
+                
+              </span>
+          
+              <span class="post-tags">
+                <i class="iconfont icon-tags" title="标签"></i>
+                
+                <span class="span--tag">
+                  <a href="/tags/%E8%AE%AD%E7%BB%83%E6%8E%A8%E7%90%86/" title="训练推理">
+                    <b>#</b> 训练推理
+                  </a>
+                </span>
+                
+              </span>
+          
+      </div>
+      <div class="markdown-body">
+        <hr>
+<p>&ensp;&ensp;这里记录一下平时用到的一些训练和推理的调优方法。<br>&ensp;&ensp;推理的一些调优方式主要是基于GPU和deepstream以及TensorRT的一些内容，Deepstream的推理pipeline性能主要集中在视频输入的编解码，模型推理的精度（fp32,fp16,int8）,以及后续的推流方式，和整体pipeline中是否存在数据resize等操作。具体而言尽量使用deepstream提供的基于gpu的编解码插件，在模型进度允许的情况下尽量采用较低精度的模型，后续 推流如果保存成文件，注意编码率等参数的设置，如果是推流，自带的推流中UDP的稳定性会更好（路数较多的情况下，根据具体需要也可以自定义推流方式）。尽量保证整个pipeline中不要过多的采用数据resize等操作。频繁的resize会对性能产生较大的影响。同时对于其中数据帧的中途存取，读写等操作尽量不要放在pipeline内部，通过probe等方式抽取一份副本，再通过另外的进程处理比较好，pipeline内部的读写操作过多会影响整体效率。基于GPU的推理主要注意算子实现的效率，数据重排提高访存效率，以及gpu内存的使用，相应层次间融合优化等。尽量提前生成TensorRT的引擎文件。<br>&ensp;&ensp;训练的一些调优方式主要是数据的处理，训练超参数的设置，损失函数的设置以及初始化等内容。模型的处理过程是对整体数据的拟合，数据集的处理对模型效果的影响很重要，就目标检测而言，其中目标大小，角度，光照条件以及一些易混淆的目标等都需要注意，不同样本之间根据模型目的要尽量平衡（不是说每种目标数量一致，而是要根据具体的情况或者说当前模型的检测结果跟期望目标之间的差别来调整）。同时数据进入模型之前，一些图像预处理操作是必要的，暗光，强光下的图要相应的调整（利用数字图像处理或者神经网络）。同时对数据进行归一化处理（调整到0均值），易于反向传播每一层权重参数的收敛，同时可以增强基向量的正交性。归一化之后的数据加快梯度下降的过程，同时有利于模型精度的提升。同时数据不足时可以对数据集进行扩充，通过对原数据集进行随机翻转，resize,抠图，以及调整对应的亮度，色彩，饱和度等等。也可以适当调整相应数据集的分辨率。同时也可以通过<a target="_blank" rel="noopener" href="https://blog.csdn.net/weixin_38715903/article/details/103999227">mix-up,cou-out,cut-mix</a>以及<a target="_blank" rel="noopener" href="https://blog.csdn.net/jacke121/article/details/106989253/">mosaic</a>等对图片进行融合产生新的数据，达到数据集和扩充效果。对不易收集的目标，可以进行抠图之后填充到其他的图片上，扩充样本数量，同时调整尺度等增加尺度多样性。损失函数的设置可以根据具体情况进行相应的平滑，平滑系数根据具体情况和期望目标制定。超参数的指定一般根据需要可以采用学习率衰减，权重衰减，以及不同的优化方式，和多种优化方式的组和等等。初始化尽量用相应的预训练数据进行初始化，加快收敛的速度，从0训练的时候，尽量选择合适的初始化方式。最终训练的过程中，根据需要可以进行多尺度训练，预先设置一组尺度，每一个epoch选择不同的尺度进行训练，提高模型鲁棒性。以及根据需要不同的类别采用不同的损失函数等（对于模型拟合困难的数据和样本不均衡的数据）。</p>
+
+      </div>
+      
+        <div class="prev-or-next">
+          <div class="post-foot-next">
+            
+              <a href="/2021/04/07/%E6%A8%A1%E5%9E%8B%E5%89%AA%E6%9E%9D%E7%9A%84%E7%9B%B8%E5%85%B3%E5%86%85%E5%AE%B9/" target="_self">
+                <i class="iconfont icon-chevronleft"></i>
+                <span>上一页</span>
+              </a>
+            
+          </div>
+          <div class="post-attach">
+            <span class="post-pubtime">
+              <i class="iconfont icon-updatetime" title="更新时间"></i>
+              2021-04-13
+            </span>
+            
+                  <span class="post-categories">
+                    <i class="iconfont icon-bookmark" title="分类"></i>
+                    
+                    <span class="span--category">
+                      <a href="/categories/%E8%AE%AD%E7%BB%83%E6%8E%A8%E7%90%86/" title="训练推理">
+                        <b>#</b> 训练推理
+                      </a>
+                    </span>
+                    
+                  </span>
+              
+                  <span class="post-tags">
+                    <i class="iconfont icon-tags" title="标签"></i>
+                    
+                    <span class="span--tag">
+                      <a href="/tags/%E8%AE%AD%E7%BB%83%E6%8E%A8%E7%90%86/" title="训练推理">
+                        <b>#</b> 训练推理
+                      </a>
+                    </span>
+                    
+                  </span>
+              
+          </div>
+          <div class="post-foot-prev">
+            
+              <a href="/2021/04/20/%E9%87%8F%E5%8C%96%E5%8E%9F%E7%90%86%E5%92%8C%E7%9B%B8%E5%85%B3%E5%AE%9E%E7%8E%B0/" target="_self">
+                <span>下一页</span>
+                <i class="iconfont icon-chevronright"></i>
+              </a>
+            
+          </div>
+        </div>
+      
+    </div>
+    
+
+    
+  </div>
+
+
+        <div class="footer">
+  <div class="social">
+    <ul>
+      
+        <li>
+          <a title="github" target="_blank" rel="noopener" href="https://github.com/laiou">
+            <i class="iconfont icon-github"></i>
+          </a>
+        </li>
+      
+        <li>
+          <a title="email" href="zs2281475@163.com">
+            <i class="iconfont icon-envelope"></i>
+          </a>
+        </li>
+      
+    </ul>
+  </div>
+  
+    <div class="footer-more">
+      <a target="_blank" rel="noopener" href="https://github.com/laiou">© 2019 — 2020  Laiuos</a>
+    </div>
+  
+    <div class="footer-more">
+      <a target="_blank" rel="noopener" href="https://creativecommons.org/licenses/by-nc-nd/4.0/">All content under CC BY-NC-ND 4.0</a>
+    </div>
+  
+</div>
+
+      </div>
+
+      <div class="back-to-top hidden">
+  <a href="javascript: void(0)">
+    <i class="iconfont icon-chevronup"></i>
+  </a>
+</div>
+
+
+<script src="/js/backtotop.js"></script>
+
+
+
+      
+
+
+    </div>
+  </body>
+</html>

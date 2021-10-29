@@ -1,0 +1,1103 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+  <head>
+  <meta charset="utf-8">
+  <meta name="author" content="zchengsite, 1451426471@qq.com" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  
+  
+  <title>相关层次算子的实现 | Blog</title>
+
+  
+    <link rel="apple-touch-icon" href="/images/favicon.png">
+    <link rel="icon" href="/images/favicon.png">
+  
+
+  <!-- Raleway-Font -->
+  <link href="https://fonts.googleapis.com/css?family=Raleway&display=swap" rel="stylesheet">
+
+  <!-- hexo site css -->
+  
+<link rel="stylesheet" href="/css/base.css">
+<link rel="stylesheet" href="/iconfont/iconfont.css">
+<link rel="stylesheet" href="/css/github-markdown.css">
+<link rel="stylesheet" href="/css/highlight.css">
+
+
+  <!-- jquery3.3.1 -->
+  <script src="https://cdn.bootcss.com/jquery/3.3.1/jquery.min.js"></script>
+
+  <!-- fancybox -->
+  <link href="https://cdn.bootcss.com/fancybox/3.5.2/jquery.fancybox.min.css" rel="stylesheet">
+  <script async src="https://cdn.bootcss.com/fancybox/3.5.2/jquery.fancybox.min.js"></script>
+  
+<script src="/js/fancybox.js"></script>
+
+
+  
+
+<meta name="generator" content="Hexo 5.1.1"></head>
+
+
+  <body>
+    <div id="app">
+      <div class="header">
+  <div class="avatar">
+    <a href="/">
+      <!-- 头像取消懒加载，添加no-lazy -->
+      
+        <img src="/images/avatar.png" alt="">
+      
+    </a>
+    <div class="nickname"><a href="/">Laious</a></div>
+  </div>
+  <div class="navbar">
+    <ul>
+      
+        <li class="nav-item" data-path="/">
+          <a href="/">Home</a>
+        </li>
+      
+        <li class="nav-item" data-path="/archives/">
+          <a href="/archives/">Archives</a>
+        </li>
+      
+        <li class="nav-item" data-path="/categories/">
+          <a href="/categories/">Categories</a>
+        </li>
+      
+        <li class="nav-item" data-path="/tags/">
+          <a href="/tags/">Tags</a>
+        </li>
+      
+        <li class="nav-item" data-path="/about/">
+          <a href="/about/">About</a>
+        </li>
+      
+    </ul>
+  </div>
+</div>
+
+
+<script src="/js/activeNav.js"></script>
+
+
+
+      <div class="flex-container">
+        <!-- 文章详情页，展示文章具体内容，url形式：https://yoursite/文章标题/ -->
+<!-- 同时为「标签tag」，「朋友friend」，「分类categories」，「关于about」页面的承载页面，具体展示取决于page.type -->
+
+
+
+  
+
+  
+
+  
+
+  
+  <!-- 文章内容页 url形式：https://yoursite/文章标题/ -->
+  <div class="container post-details" id="post-details">
+    <div class="post-content">
+      <div class="post-title">相关层次算子的实现</div>
+      <div class="post-attach">
+        <span class="post-pubtime">
+          <i class="iconfont icon-updatetime" title="更新时间"></i>
+          2021-03-29
+        </span>
+        
+              <span class="post-categories">
+                <i class="iconfont icon-bookmark" title="分类"></i>
+                
+                <span class="span--category">
+                  <a href="/categories/%E7%AE%97%E5%AD%90%E5%AE%9E%E7%8E%B0/" title="算子实现">
+                    <b>#</b> 算子实现
+                  </a>
+                </span>
+                
+              </span>
+          
+              <span class="post-tags">
+                <i class="iconfont icon-tags" title="标签"></i>
+                
+                <span class="span--tag">
+                  <a href="/tags/%E7%AE%97%E5%AD%90%E5%AE%9E%E7%8E%B0/" title="算子实现">
+                    <b>#</b> 算子实现
+                  </a>
+                </span>
+                
+              </span>
+          
+      </div>
+      <div class="markdown-body">
+        <hr>
+<p>&ensp;&ensp;主要总结一下一些常见的神经网络算子的实现方式，具体包括conv,pooling（avgpool,maxpool）,BN,route,shortcut,upsample,rnn,gru,lstm,fc,deconv,softmax等等。包括每一层次的前向出传播和反向传播的实现。<br>&ensp;&ensp;卷积层的实现一般接受的输入是上一层输出的特征图，以及相应的卷积核权重，偏置，包括相应的卷积步长，填充的维度，以及是否进行分组卷积等等。这里看一下卷积实现的im2col+gemm和winograd方法。关于im2col是提前将需要进行计算的特征图和卷积核进行调整，使得在计算的时候将卷积操作转换成两个矩阵的乘法。具体操作是将卷积核展开成一个n行m列的矩阵，这里的n表示卷积核的个数，m则代表每一个卷积核的参数数量，这个参数数量和输入的通道数有关系，如果输入通道数是c,卷积核尺寸是size，则这里的m就是size<em>size</em>c。与之相对应的就是将输入的特征图进行对应的展开，变成另外一个矩阵，正常的卷积运算的计算公式是y = wx+b;先不看后续激活，w表示权重，也就是上面对权重展开的矩阵，x表示的就是对输入特征图的展开了。这里x的每一列表示的是w中每一个卷积核在特征图上参与卷积运算的参数，也就是说每一列的长度是size<em>size</em>c，也就是x的行数。x列数则是最终输出的特征图上某一个通道上的参数数量。然后gemm主要负责实现两个矩阵的乘法。这里的im2col展开相对于原来的卷积产生了很多额外的存储空间，特征图矩阵展开因为步长的原因存在很多重复。winograd实现在这个基础上进行了一定程度的优化。减少了其中乘法的计算量。实际上这里可以看成是在im2col转换之后的对于矩阵计算的优化。具体的winograd的原理可以参考<a target="_blank" rel="noopener" href="https://zhuanlan.zhihu.com/p/260109670">这里的讲解。</a>反向传播的实现也类似，同样通过im2col先进行相应的矩阵展开，后续再利用gemm等方式进行矩阵的乘法运算，得出结果，反向传播的输入是上一层反向传播梯度的输出，首先计算对应的激活函数的梯度，然后在进行后续其他的梯度计算，这里需要注意的偏置的梯度等于整个batch中对应位置上的梯度的累加。然后在计算对于权重weights的梯度和传递到下一层的梯度也就是x的梯度，这里同样是通过im2col和genn等方式进行计算，计算weights的梯度，实际上就是将损失相对于上面那个y的梯度乘上x也就是前向过程中的输入，这里还是先利用im2col展开一次x然后通过gemm进行计算，因为是矩阵，其中的转置关系可以放在gemm中处理，然后就是计算传递到下一层的梯度也就是上式中的x的梯度了，这里通过将y的梯度和权重w相乘得到，这里矩阵转置同样放在gemm中，但是需要注意的是，这时候得到的结果是一个2维矩阵，也就是实际上im2col展开的矩阵，传递到下一层的梯度还是需要回复成原来的3维或者4维的形式，所以利用im2col的反向方式col2im来实现转换。<br>&ensp;&ensp;卷积计算的im2col和gemm实现，以下是darknet中的相关实现：</p>
+<pre><code>void im2col_cpu(float* data_im,
+ int channels,  int height,  int width,
+ int ksize,  int stride, int pad, float* data_col) 
+&#123;
+int c,h,w;
+int height_col = (height + 2*pad - ksize) / stride + 1;
+int width_col = (width + 2*pad - ksize) / stride + 1;
+
+int channels_col = channels * ksize * ksize;
+for (c = 0; c &lt; channels_col; ++c) &#123;
+    int w_offset = c % ksize;
+    int h_offset = (c / ksize) % ksize;
+    int c_im = c / ksize / ksize;
+    for (h = 0; h &lt; height_col; ++h) &#123;
+        for (w = 0; w &lt; width_col; ++w) &#123;
+            int im_row = h_offset + h * stride;
+            int im_col = w_offset + w * stride;
+            int col_index = (c * height_col + h) * width_col + w;
+            data_col[col_index] = im2col_get_pixel(data_im, height, width, channels,
+                    im_row, im_col, c_im, pad);
+        &#125;
+    &#125;
+&#125;
+&#125;
+
+
+void gemm_nn(int M, int N, int K, float ALPHA, 
+    float *A, int lda, 
+    float *B, int ldb,
+    float *C, int ldc)
+&#123;
+int i,j,k;
+#pragma omp parallel for
+for(i = 0; i &lt; M; ++i)&#123;
+    for(k = 0; k &lt; K; ++k)&#123;
+        register float A_PART = ALPHA*A[i*lda+k];
+        for(j = 0; j &lt; N; ++j)&#123;
+            C[i*ldc+j] += A_PART*B[k*ldb+j];
+        &#125;
+    &#125;
+&#125;
+&#125;
+
+void col2im_cpu(float* data_col,
+     int channels,  int height,  int width,
+     int ksize,  int stride, int pad, float* data_im) 
+&#123;
+int c,h,w;
+int height_col = (height + 2*pad - ksize) / stride + 1;
+int width_col = (width + 2*pad - ksize) / stride + 1;
+
+int channels_col = channels * ksize * ksize;
+for (c = 0; c &lt; channels_col; ++c) &#123;
+    int w_offset = c % ksize;
+    int h_offset = (c / ksize) % ksize;
+    int c_im = c / ksize / ksize;
+    for (h = 0; h &lt; height_col; ++h) &#123;
+        for (w = 0; w &lt; width_col; ++w) &#123;
+            int im_row = h_offset + h * stride;
+            int im_col = w_offset + w * stride;
+            int col_index = (c * height_col + h) * width_col + w;
+            double val = data_col[col_index];
+            col2im_add_pixel(data_im, height, width, channels,
+                    im_row, im_col, c_im, pad, val);
+        &#125;
+    &#125;
+&#125;
+&#125;</code></pre>
+<p>&ensp;&ensp;池化层的实现这了看一下maxpooling和avgpooling的实现，池化层的输入参数包括上一层的输出特征图，池化的步长，维度等参数，实际过程中还有一个batch，这里看一下batch=1的情况，实际上都是差不多的，注意以下数据维度和排列方式就好。maxpooling是在相应维度范围内比如说3x3的维度，就是在3x3范围内提取其中的最大值作为输出，avgpooling则是在对应的范围内取均值作为后续的输出。反向传播的实现这里maxpooling的梯度因为是取最值，从而对于被选中的最值而言，梯度是1，其他的实际上梯度是0，avgpooling的梯度以3x3为例的话，实际上范围内每一个值的梯度都是1/9。这一层的具体实现先对简单，具体代码就不贴了。<br>&ensp;&ensp;BN层主要实现的是对相应的而特征图数据进行归一化，加快网络训练收敛的速度，防止梯度消失和梯度爆炸，以及防止过拟合。主要的操作是先计算相应的输入特征数据的均值和方差，对数据进行归一化，然后将归一化之后的结果进行平移和缩放，作为相应的输出。具体的实现在推理过程中实际上就是将输入数据现根据均值和方差进行归一化，然后乘上一个scales然后加上对应的偏置，跟卷积计算中不同的是这里的scales和偏置是以通道为区分的，每一个通道上有一个scales和偏置值。推理时采用的均值和方差一般在训练过程中生成，也可以根据相关数据进行指定，darknet中采用的是整个训练数据上的均值和方差的加权平均值。BN层训练过程中需要计算每个batch数据的均值方差，进行加权平均以供推理使用，同时调整数据作为下一层的输入，这里的均值计算是分别计算同一个batch内数据在不同通道上的均值，比如第一个均值就是一个batch中全部数据在通道0上的均值，将全部通道0上的数据相加成一个通道在除以batch<em>w</em>h的值，得到第一个均值，这里w,h表示相应的数据维度。反向传播的话，这里需要学习的实际上是scales和偏置的值，需要计算这两个值的梯度，用来更新，以及计算传递到下一层的梯度值，这个梯度值的计算根据相应的推导来进行，需要注意的是不要忘了均值和方差中对相应梯度的计算。<br>&ensp;&ensp;BN层相应梯度计算的实现，看一下这里计算传递到下一个层次的梯度的计算：</p>
+<pre><code>void mean_delta_cpu(float *delta, float *variance, int batch, int filters, int spatial, float *mean_delta)
+&#123;
+
+int i,j,k;
+for(i = 0; i &lt; filters; ++i)&#123;
+    mean_delta[i] = 0;
+    for (j = 0; j &lt; batch; ++j) &#123;
+        for (k = 0; k &lt; spatial; ++k) &#123;
+            int index = j*filters*spatial + i*spatial + k;
+            mean_delta[i] += delta[index];
+        &#125;
+    &#125;
+    mean_delta[i] *= (-1./sqrt(variance[i] + .00001f));
+&#125;
+&#125;
+void  variance_delta_cpu(float *x, float *delta, float *mean, float *variance, int batch, int filters, int spatial, float *variance_delta)
+&#123;
+
+int i,j,k;
+for(i = 0; i &lt; filters; ++i)&#123;
+    variance_delta[i] = 0;
+    for(j = 0; j &lt; batch; ++j)&#123;
+        for(k = 0; k &lt; spatial; ++k)&#123;
+            int index = j*filters*spatial + i*spatial + k;
+            variance_delta[i] += delta[index]*(x[index] - mean[i]);
+        &#125;
+    &#125;
+    variance_delta[i] *= -.5 * pow(variance[i] + .00001f, (float)(-3./2.));
+&#125;
+&#125;
+void normalize_delta_cpu(float *x, float *mean, float *variance, float *mean_delta, float *variance_delta, int batch, int filters, int spatial, float *delta)
+&#123;
+int f, j, k;
+for(j = 0; j &lt; batch; ++j)&#123;
+    for(f = 0; f &lt; filters; ++f)&#123;
+        for(k = 0; k &lt; spatial; ++k)&#123;
+            int index = j*filters*spatial + f*spatial + k;
+            delta[index] = delta[index] * 1./(sqrt(variance[f] + .00001f)) + variance_delta[f] * 2. * (x[index] - mean[f]) / (spatial * batch) + mean_delta[f]/(spatial*batch);
+        &#125;
+    &#125;
+&#125;
+&#125;</code></pre>
+<p>&ensp;&ensp;route层是darknet中的一个层次，主要实现的是一个拼接的操作，比如有两个输入的route层，具体的操作是将后一个层次的输出特征图根据通道维度，拼接到前一个特征图的后面，具体实现根据数据具体的排列方式来进行拼接即可。反向传播相应梯度要传递到对应层次。<br>&ensp;&ensp;shortcut层实现的是类似于resnet中的跳转链接中的操作，darknet中实现的是将两个不通层次的输出特征图根据位置进行相加，也可以在相加前乘上相关系数进行调整。具体实现同样需要根据具体的数据分布，进行累加。反向传播同样要将相关梯度传回到对应层次<br>&ensp;&ensp;upsample一般用来调整数据的维度，根据输入输出之间的维度关系，在对应位置上进行取值，比如输入10x10，输出是5x5的话。5x5中每个值都是在10x10上以步长为2进行取值，反向穿播只需要传递选中的值相对应的梯度，其余位置的梯度为0.<br>&ensp;&ensp;全连接层的输入数据会展开成一个向量，然后参与后续计算，具体的计算同样也可以看成两个矩阵的乘积，所以可以通过gemm等方式来实现。后续结果也会通过相应激活函数。反向传播根据相应公式计算梯度即可，和卷积类似。<br>&ensp;&ensp;softmax的实现需要注意的是数值的上下溢出问题，主要是softmax中包括了e的指数次方，容易出现数值溢出，只需要在计算softmax的时候分子分母同时除以输入x中的最大值即可，能够防止溢出的同时，保证分母不是0,可以参考<a target="_blank" rel="noopener" href="https://blog.csdn.net/m0_37477175/article/details/79686164">这里的介绍。</a><br>&ensp;&ensp;反卷积或者说转置卷积实现的是在较小特征图上进行卷积，生成较大特征图输出的过程，结合前面计算卷积的过程，将相应数据展开成矩阵之后再来看，反卷积实际上可以看成相应矩阵转置之后在进行乘积，卷积：y = wx,转置卷积: x = w_ty。具体的实现和卷积类似，展开之后先转置在乘积。具体的也要看实际情况如果是向量生成图像特征，还需要通过col2im变换形式。<br>&ensp;&ensp;RNN层的实现，可以通过三个全连接层来实现一个RNN层，反别进行每个时间步step下的输入数据转换和隐藏状态生成以及得到每一个step的输出过程。需要注意的是一个RNN层包括多个时间单元，注意不通step下的隐藏状态和输入等的相关位置。反向传播也类似，按照steps的顺序，跟前向传播对应起来计算相应的梯度即可。lstm和gru在darknet中的实现也类似，用卷积层的全连接层的组合来完成，这里就不单独拉出来看了。跟rnn层的实现类似，注意下时间步中的隐层状态是一个step一个step，按照顺序理清楚就可以。<br>&ensp;&ensp;RNN层的实现：</p>
+<pre><code>void forward_rnn_layer(layer l, network net)
+&#123;
+network s = net;
+s.train = net.train;
+int i;
+layer input_layer = *(l.input_layer);
+layer self_layer = *(l.self_layer);
+layer output_layer = *(l.output_layer);
+
+fill_cpu(l.outputs * l.batch * l.steps, 0, output_layer.delta, 1);
+fill_cpu(l.outputs * l.batch * l.steps, 0, self_layer.delta, 1);
+fill_cpu(l.outputs * l.batch * l.steps, 0, input_layer.delta, 1);
+if(net.train) fill_cpu(l.outputs * l.batch, 0, l.state, 1);
+
+for (i = 0; i &lt; l.steps; ++i) &#123;
+    s.input = net.input;
+    forward_connected_layer(input_layer, s);
+
+    s.input = l.state;
+    forward_connected_layer(self_layer, s);
+
+    float *old_state = l.state;
+    if(net.train) l.state += l.outputs*l.batch;
+    if(l.shortcut)&#123;
+        copy_cpu(l.outputs * l.batch, old_state, 1, l.state, 1);
+    &#125;else&#123;
+        fill_cpu(l.outputs * l.batch, 0, l.state, 1);
+    &#125;
+    axpy_cpu(l.outputs * l.batch, 1, input_layer.output, 1, l.state, 1);
+    axpy_cpu(l.outputs * l.batch, 1, self_layer.output, 1, l.state, 1);
+
+    s.input = l.state;
+    forward_connected_layer(output_layer, s);
+
+    net.input += l.inputs*l.batch;
+    increment_layer(&amp;input_layer, 1);
+    increment_layer(&amp;self_layer, 1);
+    increment_layer(&amp;output_layer, 1);
+&#125;
+&#125;</code></pre>
+<p>&ensp;&ensp;卷积Winograd算法实现(主要用于3x3卷积的加速)，主要分析一下winograd实现过程，看一下ncnn中的winograd算法实现过程。具体实现winograd算法可以分成大概四步：首先计算权重矩阵的转换，然后计算输入数据的转换，接着计算权重转换和输入转换的乘积，然后计算最后的结果的转换，二维的winograd卷积算法最终的计算公式可以看成是Y = A_t*[（G<em>g</em>G_t）*(B_t<em>d</em>B)]<em>A,其中g是卷积层的权重，d是当前层的输入数据，G是权重的转换矩阵，B是输入数据转换矩阵，A是最终输出的转换矩阵，这三个矩阵具体数值可以利用<a target="_blank" rel="noopener" href="https://github.com/andravin/wincnn">相关工具</a>计算出来。从而令G</em>g<em>G_t = U，B_t</em>d<em>B = V，（G</em>g<em>G_t）</em>(B_t<em>d</em>B) = U*V = M，则winograd卷积算法的具体计算过程就变成了：1.计算矩阵U（权重矩阵的变换在load weights的时候进行计算）,2.计算矩阵V，3.根据U,V计算矩阵M，4.利用A和M计算最终的结果Y。<br>&ensp;&ensp;这里看一下ncnn中具体的实现过程，只看一下其中的c实现，不包括汇编相关内容。具体实现实际上只有两步，创建卷积的时候计算权重转换U,前向传播的时候计算剩下的部分。这里主要看其中利用winograd实现3x3卷积核进行stride =1的卷积，ncnn中使用winograd计算3x3卷积的条件是：输入输出的channel&gt; = 16,且相应的faeature map 的尺寸w和h &lt;=120时才会启用winograd计算3x3卷积。这部分的判断分别在两处实现,在layer/arm/convolution_arm.cpp中：</p>
+<pre><code>int Convolution_arm::create_pipeline(const Option&amp; opt)&#123;
+...
+if (opt.use_winograd_convolution &amp;&amp; kernel_w == 3 &amp;&amp; kernel_h == 3 &amp;&amp; dilation_w == 1 &amp;&amp; dilation_h == 1 &amp;&amp; stride_w == 1 &amp;&amp; stride_h == 1)
+    &#123;
+        // winograd is slow on small channel count
+        //判断是否启用winograd算法，输入通道和输出通道都大于等于16的时候才开启
+        if (num_input &gt;= 16 &amp;&amp; num_output &gt;= 16)
+            use_winograd3x3 = true;
+
+        if (use_winograd3x3)
+        &#123;
+            //                 conv3x3s1_winograd64_transform_kernel_neon(weight_data, weight_3x3_winograd64_data, num_input, num_output);
+            //进行卷积核的转换计算
+            conv3x3s1_winograd64_transform_kernel_neon5(weight_data, weight_3x3_winograd64_data, num_input, num_output);
+        &#125;
+    &#125;
+    ...
+
+&#125;
+
+int Convolution_arm::forward(const Mat&amp; bottom_blob, Mat&amp; top_blob, const Option&amp; opt) const&#123;
+...
+ else if (kernel_w == 3 &amp;&amp; kernel_h == 3 &amp;&amp; dilation_w == 1 &amp;&amp; dilation_h == 1 &amp;&amp; stride_w == 1 &amp;&amp; stride_h == 1)
+    &#123;
+        //再次判断使用winograd的条件，3x3当w,h&lt;=120的时候才会用同时输如输出的通道大于等于16
+        if (use_winograd3x3 &amp;&amp; w &lt;= 120 &amp;&amp; h &lt;= 120)
+        &#123;
+            //                 conv3x3s1_winograd64_neon4(bottom_blob_bordered, top_blob, weight_3x3_winograd64_data, bias_data, opt);
+            conv3x3s1_winograd64_neon5(bottom_blob_bordered, top_blob, weight_3x3_winograd64_data, bias_data, opt);
+        &#125;
+        else
+        &#123;
+            conv3x3s1_neon(bottom_blob_bordered, top_blob, weight_data, bias_data, opt);
+        &#125;
+ .....
+&#125;</code></pre>
+<p>&ensp;&ensp;然后看一下具体的计算过程，先计算权重矩阵的转换，这里看一下layer/arm/convolution_3x3.h中的实现：</p>
+<pre><code>//ncnn中这里主要做了两件事：计算权重转换结果U，以及对U的分布进行了重排（也可以边计算边重排），提高访存效率
+//这里主要实现的是一个F（6x6,3x3）的卷积计算，也就是输出尺度是6x6，卷积核尺寸是3x3，步长是1
+static void conv3x3s1_winograd64_transform_kernel_neon(const Mat&amp; kernel, Mat&amp; kernel_tm, int inch, int outch)
+&#123;
+//这里的kernel表示当前卷积层的权重weights，kernel_tm存储的是winograd卷积核转换的矩阵U,inch表示输入通道数，outch表是输出通道数（当前层卷积核个数）
+//创建相应的kernel_tm矩阵
+//关于这里的维度:8*8很容易推断G*g*G_t，不考虑通道只看2维矩阵，结果就是8*8,另外两个维度是因为卷积核个数outch和，实际上参与卷积的通道数inch。比如输入是一个3通道的图像数据，某一个卷积核参与卷积的时候实际上计算的是3X3X3个值，其中(8*8，inch)中的数据表示一个卷积核的转换
+kernel_tm.create(8 * 8, inch, outch);
+//创建对应的矩阵G，根据相应的工具可以计算F（6x6，3x3）的矩阵G如下，是一个维度为[8,3]的矩阵
+const float ktm[8][4] = &#123;
+    &#123;1.0f, 0.0f, 0.0f&#125;,
+    &#123;-2.0f / 9, -2.0f / 9, -2.0f / 9&#125;,
+    &#123;-2.0f / 9, 2.0f / 9, -2.0f / 9&#125;,
+    &#123;1.0f / 90, 1.0f / 45, 2.0f / 45&#125;,
+    &#123;1.0f / 90, -1.0f / 45, 2.0f / 45&#125;,
+    &#123;1.0f / 45, 1.0f / 90, 1.0f / 180&#125;,
+    &#123;1.0f / 45, -1.0f / 90, 1.0f / 180&#125;,
+    &#123;0.0f, 0.0f, 1.0f&#125;
+&#125;;
+
+//指示接下来的循环并行执行
+#pragma omp parallel for
+//开始kernel_tm也就是权重转换矩阵U的计算
+//根据kernel_tm的维度来看，循环遍历每一个输出通道，或者说每一个卷积核
+for (int p = 0; p &lt; outch; p++)
+&#123;
+//循环遍历每一个输入通道，或者说每一个参与卷积的输入通道
+//这个循环内部的计算就是二维的矩阵计算了
+    for (int q = 0; q &lt; inch; q++)
+    &#123;
+        //定位相应的指针位置，也就是每一个卷积核的每一个通道的起始位置
+        //因为是3x3的卷积核，所以后面是乘9..，注意一下卷积核的维度即可
+        const float* kernel0 = (const float*)kernel + p * inch * 9 + q * 9;
+        //定位对应的kernel_tm中与之对应的位置
+        float* kernel_tm0 = kernel_tm.channel(p).row(q);
+
+        // transform kernel, transposed
+        //这里的k0到k1实际上就是帮忙定位某一个卷积核某一个通道上的9个值
+        const float* k0 = kernel0;
+        const float* k1 = kernel0 + 3;
+        const float* k2 = kernel0 + 6;
+
+        // h
+        float tmp[8][5];
+        //这个循环计算的是G*g，得到一个[8,3]的中间结果
+        for (int i = 0; i &lt; 8; i++)
+        &#123;
+            tmp[i][0] = k0[0] * ktm[i][0] + k0[1] * ktm[i][6] + k0[2] * ktm[i][7];
+            tmp[i][8] = k1[0] * ktm[i][0] + k1[1] * ktm[i][9] + k1[2] * ktm[i][10];
+            tmp[i][11] = k2[0] * ktm[i][0] + k2[1] * ktm[i][12] + k2[2] * ktm[i][13];
+        &#125;
+
+        // v
+        //然后计算中间结果[8,3]*G_t得到U，也就是[8,3]*[3,8]--&gt;[8,8]
+        for (int j = 0; j &lt; 8; j++)
+        &#123;
+            float* tmpp = &amp;tmp[j][0];
+
+            for (int i = 0; i &lt; 8; i++)
+            &#123;
+                kernel_tm0[j * 8 + i] = tmpp[0] * ktm[i][0] + tmpp[1] * ktm[i][14] + tmpp[2] * ktm[i][15];
+            &#125;
+        &#125;
+    &#125;
+&#125;
+//到这里实际上U的初步计算就完成了，这个时候的矩阵U的维度[8*8,inch,outch],也就是看成一个3维矩阵的化，这个矩阵的每一个通道对应每一个卷积核的数据，然后W维度的64个值就是某一个通道上的数据，H维度表示卷积计算的时候参与卷积的通道，也就是输入通道数
+
+
+// optimized layout for winograd4
+// interleave weights
+//对矩阵U进行重排，nn_outch表示将outch右移2位的值，完成outch/4的计算
+//整个重排过程注意inch方向和outch方向不能取整时的处理
+int nn_outch = outch &gt;&gt; 2;
+int remain_outch_start = nn_outch &lt;&lt; 2;
+//这里的kernel_tm2就是对矩阵U进行重排的结果，看一下这里的维度
+//首先这里是对kernel_tm的重排，数据总量实际上还是一样的，（outch%4+3）/4保证不能取整的时候数据维度能够足够用，所以这里的kernel_tm2的维度实际上可能会比kernel_tm稍微大一些，但是数据是一样的。。定义的时候要考虑不能取整的情况
+//从这个维度上大概就能看出，kernel_tm2将kernel_tm上每4个通道的数据压缩成到一个W维度上
+Mat kernel_tm2(8 * 8 * inch * 4, 1, nn_outch + (outch % 4 + 3) / 4);
+
+#pragma omp parallel for
+//还是并行处理
+//循环遍历每一个nn_outch
+for (int pp = 0; pp &lt; nn_outch; pp++)
+&#123;
+    //这里的p实际上是一个用于定位的参数
+    int p = pp * 4;
+    //定位相应的kernel_tm2的对应通道位置
+    float* ktm2 = kernel_tm2.channel(pp);
+    //分别定位kernel_tm上连续的4个通道
+    const Mat kernel0_tm = kernel_tm.channel(p);
+    const Mat kernel1_tm = kernel_tm.channel(p + 1);
+    const Mat kernel2_tm = kernel_tm.channel(p + 2);
+    const Mat kernel3_tm = kernel_tm.channel(p + 3);
+
+    int q = 0;
+    //q定位对应的行数，依次取2行
+    //这个循环结束，处理完了相应4个通道上的数据
+    for (; q + 1 &lt; inch; q += 2)
+    &#123;
+        //这里就是分别取对应的连续四个通道上的连续的两行
+        const float* k00 = kernel0_tm.row(q);
+        const float* k01 = kernel0_tm.row(q + 1);
+        const float* k10 = kernel1_tm.row(q);
+        const float* k11 = kernel1_tm.row(q + 1);
+        const float* k20 = kernel2_tm.row(q);
+        const float* k21 = kernel2_tm.row(q + 1);
+        const float* k30 = kernel3_tm.row(q);
+        const float* k31 = kernel3_tm.row(q + 1);
+        //这个循环完成连续两行的的重排，4个通道每个通道两行，一共8*8*4*2个数据的重排
+        //这个循环结束kernel_tm2中某一个通道上的数据排列：
+        //ch0_0(4),ch0_1(4),ch1_0(4),ch1_1(4),ch2_0(4),ch2_1(4),ch3_0(4),ch3_0(4)...交错排列
+        for (int r = 0; r &lt; 16; r++)
+        &#123;
+
+            for (int m = 0; m &lt; 4; m++)
+            &#123;
+                ktm2[0 + m] = k00[m];
+                ktm2[4 + m] = k01[m];
+                ktm2[8 + m] = k10[m];
+                ktm2[12 + m] = k11[m];
+                ktm2[16 + m] = k20[m];
+                ktm2[20 + m] = k21[m];
+                ktm2[24 + m] = k30[m];
+                ktm2[28 + m] = k31[m];
+            &#125;
+
+            k00 += 4;
+            k01 += 4;
+            k10 += 4;
+            k11 += 4;
+            k20 += 4;
+            k21 += 4;
+            k30 += 4;
+            k31 += 4;
+            ktm2 += 32;
+
+        &#125;
+    &#125;
+
+    //这里的q接着上个循环结束的取值，也就是可能存在inch/2不能取整的情况，所以这里剩下的部分依次只取一行数据进行处理
+    for (; q &lt; inch; q++)
+    &#123;
+        //再一次定位到对应的四个通道中相应的行数
+        //这里取连续4通道上对应的每一行
+        const float* k00 = kernel0_tm.row(q);
+        const float* k10 = kernel1_tm.row(q);
+        const float* k20 = kernel2_tm.row(q);
+        const float* k30 = kernel3_tm.row(q);
+
+        for (int r = 0; r &lt; 16; r++)
+        &#123;
+
+            for (int m = 0; m &lt; 4; m++)
+            &#123;
+                ktm2[0 + m] = k00[m];
+                ktm2[4 + m] = k10[m];
+                ktm2[8 + m] = k20[m];
+                ktm2[12 + m] = k30[m];
+            &#125;
+
+            k00 += 4;
+            k10 += 4;
+            k20 += 4;
+            k30 += 4;
+            ktm2 += 16;
+
+        &#125;
+    &#125;
+&#125;
+
+#pragma omp parallel for
+//并行处理
+//remain_outch_start是outch先右移两位在左移两位的结果和outch之间实际上是存在一个偏差的
+//这里处理的是多出来不能取整的几个通道数据
+for (int p = remain_outch_start; p &lt; outch; p++)
+&#123;
+    //定位到相应的指针位置
+    float* ktm2 = (float*)kernel_tm2.channel(nn_outch) + 8 * 8 * inch * (p - remain_outch_start);
+    //定位kernel_tm对应的通道上
+    const Mat kernel0_tm = kernel_tm.channel(p);
+
+    int q = 0;  
+    //循环处理相应通道的数据
+    //这里也是每次只取了一行
+    for (; q &lt; inch; q++)
+    &#123;
+        const float* k00 = kernel0_tm.row(q);
+
+        for (int r = 0; r &lt; 16; r++)
+        &#123;
+
+            for (int m = 0; m &lt; 4; m++)
+            &#123;
+                ktm2[m] = k00[m];
+            &#125;
+
+            k00 += 4;
+            ktm2 += 4;
+
+        &#125;
+    &#125;
+&#125;
+
+kernel_tm = kernel_tm2;
+
+&#125;</code></pre>
+<p>&ensp;&ensp;到这里权重的转换计算就完成了，通常这部分的计算在创建卷积层的时候完成，看一下后续的计算过程，先看一下在src/layer/arm/convlution_3x3.h中的输入数据的转换矩阵V的计算：</p>
+<pre><code>//这个函数在前向传播的时候调用，完成前向计算，完整的这个函数完成了winograd的输入数据转换和后续结果的计算，所以说具体实现实际上只分了两个部分。。
+static void conv3x3s1_winograd64_neon4(const Mat&amp; bottom_blob, Mat&amp; top_blob, const Mat&amp; kernel_tm, const Mat&amp; _bias, const Option&amp; opt)
+&#123;
+//看一下参数：bottom_blob表示当前层的输入特征矩阵，top_blob表示当前层的输出，kernel_tm就是上面计算的权重转换矩阵，_bias表示当前层的偏置。opt表示ncnn中的op（这里不讨论op的内容）
+//提取相应的输入和输出矩阵的维度数据
+int w = bottom_blob.w;
+int h = bottom_blob.h;
+int inch = bottom_blob.c;
+
+int outw = top_blob.w;
+int outh = top_blob.h;
+int outch = top_blob.c;
+
+// pad to 6n+2
+Mat bottom_blob_bordered = bottom_blob;
+
+outw = (outw + 5) / 6 * 6;
+outh = (outh + 5) / 6 * 6;
+
+w = outw + 2;
+h = outh + 2;
+Option opt_b = opt;
+opt_b.blob_allocator = opt.workspace_allocator;
+//这里将输入数据用0进行填充，将输入数据填充到6n+2的维度，3x3，stride = 1，得到6x6输出，填充到8就可以，之所以是6n+2是因为输入维度会超过8，计算的时候可以将其拆分成小的模块去计算，每个小模块得到6x6输出。而拆分出的输入数据大小就是8x8，同时填充到6n+2保证了输出的维度一定是6x6的整数倍
+copy_make_border(bottom_blob, bottom_blob_bordered, 0, h - bottom_blob.h, 0, w - bottom_blob.w, 0, 0.f, opt_b);
+
+const float* bias = _bias;
+
+// BEGIN transform input
+//开始计算输入数据的转换，也就是计算V= B_t*d*B,具体的矩阵B和B_t根据相应工具能够得到
+//对于F（6x6,3x3）对应的B的维度是[8,8]
+Mat bottom_blob_tm;
+&#123;
+    //从上面的分析中能得到。这里的outw/6和outh/6计算的是输出数据中6x6模块的个数，然后在乘上8得到的就是对应的输入数据的数量,一个6x6模块的输出对应一个8x8模块的输入,这里的w_tm和h_tm表示的是转换后输入数据的维度（这个维度是根据输出反推得到的）
+    //虽然填充到了6n+2，但是前向过程中并不知道具体的n是多少，所以需要从输出维度反推
+    int w_tm = outw / 6 * 8;
+    int h_tm = outh / 6 * 8;
+    //这里的create实现的是一个分配内存的操作，分配一个[4, 16 * w_tm / 8 * h_tm / 8, inch]的内存，对应输入数据的转换矩阵的w,h,c维度，实际上这里对于输入数据同样进行了重排
+    //create的具体实现参考ncnn中的相关实现
+    //关于这个维度的数据，经过上面的pad，输入数据实际上的维度变成了[6n+2,6n+2,inch]，然后经过转换变成bottom_blob_tm中的[4, 16 * w_tm / 8 * h_tm / 8, inch]，w_tm，和h_tm表示转换后输入数据的维度，正常转换后，的维度应该是[w_tm,h_tm,inch]。从维度的变化就能看出这里对输入数据的重排了
+    bottom_blob_tm.create(4, 16 * w_tm / 8 * h_tm / 8, inch, 4u, opt.workspace_allocator);
+    //到这里就能看出这里计算的是将填充后的输入数据划分成8x8的模块的数量了
+    const int tiles = w_tm / 8 * h_tm / 8;
+
+    //         const float itm[8][8] = &#123;
+    //             &#123;1.0f,  0.0f, -5.25f,  0.00f,  5.25f,  0.00f, -1.0f, 0.0f&#125;,
+    //
+    //             &#123;0.0f,  1.0f,  1.00f, -4.25f, -4.25f,  1.00f,  1.0f, 0.0f&#125;,
+    //             &#123;0.0f, -1.0f,  1.00f,  4.25f, -4.25f, -1.00f,  1.0f, 0.0f&#125;,
+    //
+    //             &#123;0.0f,  0.5f,  0.25f, -2.50f, -1.25f,  2.00f,  1.0f, 0.0f&#125;,
+    //             &#123;0.0f, -0.5f,  0.25f,  2.50f, -1.25f, -2.00f,  1.0f, 0.0f&#125;,
+    //
+    //             &#123;0.0f,  2.0f,  4.00f, -2.50f, -5.00f,  0.50f,  1.0f, 0.0f&#125;,
+    //             &#123;0.0f, -2.0f,  4.00f,  2.50f, -5.00f, -0.50f,  1.0f, 0.0f&#125;,
+    //
+    //             &#123;0.0f, -1.0f,  0.00f,  5.25f,  0.00f, -5.25f,  0.0f, 1.0f&#125;
+    //         &#125;;
+
+    // 0 = r00 - r06 + (r04 - r02) * 5.25
+    // 7 = r07 - r01 + (r03 - r05) * 5.25
+
+    // 1 = (r02 + r06 - r04 * 4.25) + (r01 - r03 * 4.25 + r05)
+    // 2 = (r02 + r06 - r04 * 4.25) - (r01 - r03 * 4.25 + r05)
+
+    // 3 = (r06 + r02 * 0.25 - r04 * 1.25) + (r01 * 0.5 - r03 * 2.5 + r05 * 2)
+    // 4 = (r06 + r02 * 0.25 - r04 * 1.25) - (r01 * 0.5 - r03 * 2.5 + r05 * 2)
+
+    // reuse r04 * 1.25
+    // reuse r03 * 2.5
+    // 5 = (r06 + (r02 - r04 * 1.25) * 4) + (r01 * 2 - r03 * 2.5 + r05 * 0.5)
+    // 6 = (r06 + (r02 - r04 * 1.25) * 4) - (r01 * 2 - r03 * 2.5 + r05 * 0.5)
+
+
+
+    #pragma omp parallel for num_threads(opt.num_threads)
+    //并行处理
+    //循环处理每一个通道
+    for (int q = 0; q &lt; inch; q++)
+    &#123;
+        //取填充后输入数据的相应通道
+        const Mat img0 = bottom_blob_bordered.channel(q);
+        //同时定位到对应的bottom_blob_tm对应的通道
+        Mat img0_tm = bottom_blob_tm.channel(q);
+
+        float tmp[8][8];
+
+        // tile
+        //循环处理每一个8x8的模块
+        for (int i = 0; i &lt; h_tm / 8; i++)
+        &#123;
+            for (int j = 0; j &lt; w_tm / 8; j++)
+            &#123;
+                //定位到对应模块的起始位置，左上角顶点的位置，为什么是6不是8,是因为具体到输入数据上滑动的时候，只需要移动6个位置，就到了下一个模块的位置
+                const float* r0 = img0.row(i * 6) + j * 6;
+                //这里开始进行模块内部的计算，因为是8x8的模块，所以这里的循环用的是8
+                //从tmp的维度也能看得出来。。这里实际上进行的是[8,8]*[8,8] = [8,8]的计算
+                //注意的是这个循环里面计算的是tmp = d*B....
+                for (int m = 0; m &lt; 8; m++)
+                &#123;
+                    //这里的计算过程参考矩阵B_t的具体数值
+                    tmp[0][m] = r0[0] - r0[6] + (r0[4] - r0[2]) * 5.25f;
+                    tmp[7][m] = r0[7] - r0[1] + (r0[3] - r0[5]) * 5.25f;
+
+                    float tmp12a = (r0[2] + r0[6] - r0[4] * 4.25f);
+                    float tmp12b = (r0[1] + r0[5] - r0[3] * 4.25f);
+
+                    tmp[1][m] = tmp12a + tmp12b;
+                    tmp[2][m] = tmp12a - tmp12b;
+
+                    float tmp34a = (r0[6] + r0[2] * 0.25f - r0[4] * 1.25f);
+                    float tmp34b = (r0[1] * 0.5f - r0[3] * 2.5f + r0[5] * 2.f);
+
+                    tmp[3][m] = tmp34a + tmp34b;
+                    tmp[4][m] = tmp34a - tmp34b;
+
+                    float tmp56a = (r0[6] + (r0[2] - r0[4] * 1.25f) * 4.f);
+                    float tmp56b = (r0[1] * 2.f - r0[3] * 2.5f + r0[5] * 0.5f);
+
+                    tmp[5][m] = tmp56a + tmp56b;
+                    tmp[6][m] = tmp56a - tmp56b;
+                    //将r0定位到下一个位置，这里之所以是加w是因为需要将r0定位到下一行或者说列的位置，相对于整个pad之后的输入矩阵来说，就是加上W,画个图就看出来了
+                    r0 += w;
+                &#125;
+                //然后在完成B_t*tmp的计算，同时完成对输入input的重排
+                //这里的i * w_tm / 8 + j表示的是当前的8x8模块是bottom_blob_bordered对应通道上的第几个模块，先算w维度，在算h维度（先行后列）
+                //根据这个模块的序号定位在bottom_blob_tm中的行号
+                //这里拆分的逻辑就是，最终计算的矩阵V是一个[8,8]矩阵，这里将其拆分成16个[4,1]来存储，每两个之间间隔titles行数，刚好bottom_block_tm的维度是[4,16*titles,inch]...
+                float* r0_tm_0 = img0_tm.row(i * w_tm / 8 + j);
+                float* r0_tm_4 = img0_tm.row(i * w_tm / 8 + j + tiles);
+                //计算B_t*tmp，并分开存储
+                for (int m = 0; m &lt; 8; m++)
+                &#123;
+                    //定位到tmp的对应行起点
+                    const float* tmp0 = tmp[m];
+
+                    r0_tm_0[0] = tmp0[0] - tmp0[6] + (tmp0[4] - tmp0[2]) * 5.25f;
+                    r0_tm_4[3] = tmp0[7] - tmp0[1] + (tmp0[3] - tmp0[5]) * 5.25f;
+
+                    float tmp12a = (tmp0[2] + tmp0[6] - tmp0[4] * 4.25f);
+                    float tmp12b = (tmp0[1] - tmp0[3] * 4.25f + tmp0[5]);
+
+                    r0_tm_0[1] = tmp12a + tmp12b;
+                    r0_tm_0[2] = tmp12a - tmp12b;
+
+                    float tmp34a = (tmp0[6] + tmp0[2] * 0.25f - tmp0[4] * 1.25f);
+                    float tmp34b = (tmp0[1] * 0.5f - tmp0[3] * 2.5f + tmp0[5] * 2.f);
+
+                    r0_tm_0[3] = tmp34a + tmp34b;
+                    r0_tm_4[0] = tmp34a - tmp34b;
+
+                    float tmp56a = (tmp0[6] + (tmp0[2] - tmp0[4] * 1.25f) * 4.f);
+                    float tmp56b = (tmp0[1] * 2.f - tmp0[3] * 2.5f + tmp0[5] * 0.5f);
+
+                    r0_tm_4[1] = tmp56a + tmp56b;
+                    r0_tm_4[2] = tmp56a - tmp56b;
+                    //将指针定位到下一个位置，之所以是img0_tm.w * tiles * 2，因为8x8的一行需要2个4X1来存储，中间还有间隔的titles行。
+                    r0_tm_0 += img0_tm.w * tiles * 2;
+                    r0_tm_4 += img0_tm.w * tiles * 2;
+                &#125;
+
+            &#125;
+        &#125;
+    &#125;
+&#125;
+bottom_blob_bordered = Mat();
+//到这里就完成了输入数据的转换和重排
+...(后续还紧接着其他的计算，这里计算输入的转换到这里结束)
+&#125;</code></pre>
+<p>&ensp;&ensp;接着进行U*V = M的计算，还是在src/layer/arm/convlution_3x3.h中，就紧接着V计算的后面：</p>
+<pre><code>   static void conv3x3s1_winograd64_neon4(const Mat&amp; bottom_blob, Mat&amp; top_blob, const Mat&amp; kernel_tm, const Mat&amp; _bias, const Option&amp; opt)
+&#123;
+.......
+    // BEGIN dot
+    //这里就是利用之前按的权重转换结果和输入转换结果计算U*V = M的过程
+    //kernel_tm2(8 * 8 * inch * 4, 1, nn_outch + (outch % 4 + 3) / 4)
+    //bottom_blob_tm.create(4, 16 * w_tm / 8 * h_tm / 8, inch, 4u, opt.workspace_allocator);
+Mat top_blob_tm;
+&#123;
+    int w_tm = outw / 6 * 8;
+    int h_tm = outh / 6 * 8;
+    //给M矩阵分配内存，从维度上就能看到，这里还是进行了数据重排列
+    //不重排得到的应该是：[8*8,inch,outch]  [w_tm,h_tm,inch]--&gt;[w_tm,h_tm,outch]
+
+    top_blob_tm.create(4, 16 * w_tm / 8 * h_tm / 8, outch, 4u, opt.workspace_allocator);
+    //这里计算的也是根据8x8划分的模块的数量
+    const int tiles = h_tm / 8 * w_tm / 8;
+    //这里和前面权重重排类似，防止不能取整的时候
+    int nn_outch = outch &gt;&gt; 2;
+    int remain_outch_start = nn_outch &lt;&lt; 2;
+    //并行计算每一个模块
+    #pragma omp parallel for num_threads(opt.num_threads)
+    //循环处理每一个输出的通道
+    for (int pp = 0; pp &lt; nn_outch; pp++)
+    &#123;
+        int p = pp * 4;
+        //还是和权重重排类似，取连续的四个通道,这里是因为权重矩阵重排之后
+        //[8*8*inch*4,i,...]
+        //所以重排后的权重矩阵一个通道上的权重实际上是4个卷积核的权值，能计算输出数据的个通道上的值
+        Mat out0_tm = top_blob_tm.channel(p);
+        Mat out1_tm = top_blob_tm.channel(p + 1);
+        Mat out2_tm = top_blob_tm.channel(p + 2);
+        Mat out3_tm = top_blob_tm.channel(p + 3);
+        //同时定位权重矩阵对应的通道
+        const float* ktm = kernel_tm.channel(pp);
+
+        out0_tm.fill(0.f);
+        out1_tm.fill(0.f);
+        out2_tm.fill(0.f);
+        out3_tm.fill(0.f);
+
+        int q = 0;
+
+        //转换后的权重矩阵维度是：kernel_tm2(8 * 8 * inch * 4, 1, nn_outch + (outch % 4 + 3) / 4)
+        //这里循环遍历每一个输入通道，这里循环取输入数据
+        for (; q + 1 &lt; inch; q += 2)
+        &#123;
+            //定位对应的输入数据转换矩阵的通道
+            const float* r0 = bottom_blob_tm.channel(q);
+            const float* r1 = bottom_blob_tm.channel(q + 1);
+
+            float* output0_tm = out0_tm;
+            float* output1_tm = out1_tm;
+            float* output2_tm = out2_tm;
+            float* output3_tm = out3_tm;
+            //这里进行相应的计算，也就是进行一个8x8模块内部的计算
+            //这时候实际上是一个[8,8]*[8,8]--&gt;[8,8]的过程
+            //这里的循环是因为重排后的输入数据为维度[4,16*titles,inch]
+            for (int r = 0; r &lt; 16; r++)
+            &#123;
+                for (int t = 0; t &lt; tiles; t++)
+                &#123;
+                    for (int m = 0; m &lt; 4; m++)
+                    &#123;
+                        //这里计算对应的卷积输出，前面权重和输入数据都是4个一组交错排列
+                        //所以这里也是4个4个进行计算
+                        output0_tm[m] += r0[m] * ktm[0 + m];
+                        output0_tm[m] += r1[m] * ktm[4 + m];
+                        output1_tm[m] += r0[m] * ktm[8 + m];
+                        output1_tm[m] += r1[m] * ktm[12 + m];
+                        output2_tm[m] += r0[m] * ktm[16 + m];
+                        output2_tm[m] += r1[m] * ktm[20 + m];
+                        output3_tm[m] += r0[m] * ktm[24 + m];
+                        output3_tm[m] += r1[m] * ktm[28 + m];
+                    &#125;
+
+                    r0 += 4;
+                    r1 += 4;
+                    output0_tm += 4;
+                    output1_tm += 4;
+                    output2_tm += 4;
+                    output3_tm += 4;
+                &#125;
+
+                ktm += 32;
+            &#125;
+
+        &#125;
+        //这里处理的是inch上不能取整的维度，逻辑类似前面权重中的不能取整的处理
+        for (; q &lt; inch; q++)
+        &#123;
+            const float* r0 = bottom_blob_tm.channel(q);
+
+            float* output0_tm = out0_tm;
+            float* output1_tm = out1_tm;
+            float* output2_tm = out2_tm;
+            float* output3_tm = out3_tm;
+
+
+            for (int r = 0; r &lt; 16; r++)
+            &#123;
+                for (int t = 0; t &lt; tiles; t++)
+                &#123;
+                    for (int m = 0; m &lt; 4; m++)
+                    &#123;
+                        output0_tm[m] += r0[m] * ktm[0 + m];
+                        output1_tm[m] += r0[m] * ktm[4 + m];
+                        output2_tm[m] += r0[m] * ktm[8 + m];
+                        output3_tm[m] += r0[m] * ktm[12 + m];
+                    &#125;
+
+                    r0 += 4;
+                    output0_tm += 4;
+                    output1_tm += 4;
+                    output2_tm += 4;
+                    output3_tm += 4;
+                &#125;
+
+                ktm += 16;
+            &#125;
+
+        &#125;
+    &#125;
+
+    #pragma omp parallel for num_threads(opt.num_threads)
+    //还是和权重转换类似，进行outch方向上不能取整的处理
+    for (int p = remain_outch_start; p &lt; outch; p++)
+    &#123;
+        Mat out0_tm = top_blob_tm.channel(p);
+
+        const float* ktm = (const float*)kernel_tm.channel(nn_outch) + 8 * 8 * inch * (p - remain_outch_start);
+
+        out0_tm.fill(0.f);
+
+        int q = 0;
+
+        for (; q &lt; inch; q++)
+        &#123;
+            const float* r0 = bottom_blob_tm.channel(q);
+
+            float* output0_tm = out0_tm;
+
+            for (int r = 0; r &lt; 16; r++)
+            &#123;
+
+
+                // tile
+                for (int i = 0; i &lt; tiles; i++)
+                &#123;
+
+                    for (int m = 0; m &lt; 4; m++)
+                    &#123;
+                        output0_tm[m] += r0[m] * ktm[m];
+                    &#125;
+
+                    r0 += 4;
+                    output0_tm += 4;
+
+                &#125;
+
+
+                ktm += 4;
+
+            &#125;
+        &#125;
+    &#125;
+&#125;
+bottom_blob_tm = Mat();
+// END dot
+//最终得到的M实际上也是 进行了重排，重拍的逻辑和前面的类似
+//[4,61*titles,outch]，这个逻辑和输入数据的重排类似，一个通道内数据被重排了
+（到这里完成U*V = M的计算，后续就是计算最终输出Y了，最终输出的计算放到后面）
+......
+&#125;</code></pre>
+<p>&ensp;&ensp;最后就是根据M和A计算最终的输出结果了，实际上还是接着M的计算后面，src/layer/arm/convlution_3x3.h：</p>
+<pre><code>    static void conv3x3s1_winograd64_neon4(const Mat&amp; bottom_blob, Mat&amp; top_blob, const Mat&amp; kernel_tm, const Mat&amp; _bias, const Option&amp; opt)
+&#123;
+.......
+// BEGIN transform output
+//开始计算最后的结果
+//利用矩阵A和上面得到的矩阵M计算最终的卷积输出Y = A_t*M*A
+Mat top_blob_bordered;
+//最终输出的Y的维度[outw,outh,outch]
+//这里的A_t是一个[6,8]的矩阵
+top_blob_bordered.create(outw, outh, outch, 4u, opt.workspace_allocator);
+&#123;
+    //         const float otm[6][8] = &#123;
+    //             &#123;1.0f,  1.0f,   1.0f,   1.0f,   1.0f,  32.0f, 32.0f, 0.0f&#125;,
+    //             &#123;0.0f,  1.0f,  -1.0f,   2.0f,  -2.0f,  16.0f,-16.0f, 0.0f&#125;,
+    //             &#123;0.0f,  1.0f,   1.0f,   4.0f,   4.0f,   8.0f,  8.0f, 0.0f&#125;,
+    //             &#123;0.0f,  1.0f,  -1.0f,   8.0f,  -8.0f,   4.0f, -4.0f, 0.0f&#125;,
+    //             &#123;0.0f,  1.0f,   1.0f,  16.0f,  16.0f,   2.0f,  2.0f, 0.0f&#125;,
+    //             &#123;0.0f,  1.0f,  -1.0f,  32.0f, -32.0f,   1.0f, -1.0f, 1.0f&#125;
+    //         &#125;;
+
+    // 0 = r0 + (r1 + r2) + (r3 + r4)     + (r5 + r6) * 32
+    // 1 =      (r1 - r2) + (r3 - r4) * 2 + (r5 - r6) * 16
+    // 2 =      (r1 + r2) + (r3 + r4) * 4 + (r5 + r6) * 8
+    // 3 =      (r1 - r2) + (r3 - r4) * 8 + (r5 - r6) * 4
+    // 4 =      (r1 + r2) + (r3 + r4) * 16+ (r5 + r6) * 2
+    // 5 = r7 + (r1 - r2) + (r3 - r4) * 32+ (r5 - r6)
+
+
+
+    //w_tm表示的反推的输入数据的维度
+    int w_tm = outw / 6 * 8;
+    int h_tm = outh / 6 * 8;
+    //计算相应的划分的8x8模块的数量
+    const int tiles = w_tm / 8 * h_tm / 8;
+
+    #pragma omp parallel for num_threads(opt.num_threads)
+    //并行处理相应的计算
+    //循环进行每一个输出通道的计算
+    for (int p = 0; p &lt; outch; p++)
+    &#123;
+        //定位到相应的输出通道，这里的top_blob_tm是根据A_t*M*A计算的结果，实际上是一个类似前面交错排列的数据
+        const Mat out0_tm = top_blob_tm.channel(p);
+        //同时定位到对应的重排后的输出通道，这里将其恢复成正常的排列方式
+        Mat out0 = top_blob_bordered.channel(p);
+        //相应的偏置
+        const float bias0 = bias ? bias[p] : 0.f;
+
+        float tmp[6][8];
+
+        // tile
+        //循环遍历每一个titles
+        for (int i = 0; i &lt; outh / 6; i++)
+        &#123;
+            for (int j = 0; j &lt; outw / 6; j++)
+            &#123;
+
+                //定为top_blob_tm中相应的行数，实际上也是4个4个交错排列
+                //间隔tile行
+                const float* output0_tm_0 = out0_tm.row(i * w_tm / 8 + j);
+                const float* output0_tm_4 = out0_tm.row(i * w_tm / 8 + j + tiles);
+                //进行具体的8x8模块内部的计算
+                for (int m = 0; m &lt; 8; m++)
+                &#123;
+
+                    float tmp024a = output0_tm_0[1] + output0_tm_0[2];
+                    float tmp135a = output0_tm_0[1] - output0_tm_0[2];
+
+                    float tmp024b = output0_tm_0[3] + output0_tm_4[0];
+                    float tmp135b = output0_tm_0[3] - output0_tm_4[0];
+
+                    float tmp024c = output0_tm_4[1] + output0_tm_4[2];
+                    float tmp135c = output0_tm_4[1] - output0_tm_4[2];
+
+                    tmp[0][m] = output0_tm_0[0] + tmp024a + tmp024b + tmp024c * 32;
+                    tmp[2][m] = tmp024a + tmp024b * 4 + tmp024c * 8;
+                    tmp[4][m] = tmp024a + tmp024b * 16 + tmp024c + tmp024c;
+
+                    tmp[1][m] = tmp135a + tmp135b + tmp135b + tmp135c * 16;
+                    tmp[3][m] = tmp135a + tmp135b * 8 + tmp135c * 4;
+                    tmp[5][m] = output0_tm_4[3] + tmp135a + tmp135b * 32 + tmp135c;
+
+                    output0_tm_0 += out0_tm.w * tiles * 2;
+                    output0_tm_4 += out0_tm.w * tiles * 2;
+                &#125;
+                //这里定位到最终存储输出的矩阵相应位置，之所以是乘上6,是因为最终得到的输出模块就是6x6的
+                float* output0 = out0.row(i * 6) + j * 6;
+                //循环遍历每一个输出6x6模块中的位置
+                //完成计算的同时进行重排，恢复相应的存储结构
+                for (int m = 0; m &lt; 6; m++)
+                &#123;
+                    const float* tmp0 = tmp[m];
+
+                    float tmp024a = tmp0[1] + tmp0[2];
+                    float tmp135a = tmp0[1] - tmp0[2];
+
+                    float tmp024b = tmp0[3] + tmp0[4];
+                    float tmp135b = tmp0[3] - tmp0[4];
+
+                    float tmp024c = tmp0[5] + tmp0[6];
+                    float tmp135c = tmp0[5] - tmp0[6];
+                    //添加偏置获取最终卷积结果
+                    output0[0] = bias0 + tmp0[0] + tmp024a + tmp024b + tmp024c * 32;
+                    output0[2] = bias0 + tmp024a + tmp024b * 4 + tmp024c * 8;
+                    output0[4] = bias0 + tmp024a + tmp024b * 16 + tmp024c + tmp024c;
+
+                    output0[1] = bias0 + tmp135a + tmp135b + tmp135b + tmp135c * 16;
+                    output0[3] = bias0 + tmp135a + tmp135b * 8 + tmp135c * 4;
+                    output0[5] = bias0 + tmp0[7] + tmp135a + tmp135b * 32 + tmp135c;
+
+                    output0 += outw;
+                &#125;
+
+            &#125;
+        &#125;
+    &#125;
+&#125;
+// END transform output
+//计算输出结束，结束整个winograd的计算过程
+&#125;</code></pre>
+<p>  &ensp;&ensp;到这里，整个winograd算法的计算过程就结束了，实际上就是根据相应的公式完成计算，只是在计算的过程中同时对相应的数据进行重排，提高访存效率。<br>  &ensp;&ensp;后面在看一下卷积实现的FFT算法和Strassen算法，<a target="_blank" rel="noopener" href="https://www.cnblogs.com/zhoutaotao/p/3963048.html">Strassen</a>在大维度卷积的时候效果比较好，具体的实现可以<a target="_blank" rel="noopener" href="https://blog.csdn.net/zhuangxiaobin/article/details/36476769">参考这里。</a><br>  &ensp;&ensp;FFT也可以用来实现卷积计算，关于FFT的介绍可以<a target="_blank" rel="noopener" href="https://blog.csdn.net/enjoy_pascal/article/details/81478582">参考这里。</a><br>  &ensp;&ensp;关于这几种卷积的实现，FFT减少了卷积的计算量，适用于大卷积核，Strassen同样减少了矩阵相乘的计算量，也在维度较高时收益比较好，im2col只改善访存，winograd减少卷积计算量，适用于小卷积核。</p>
+
+      </div>
+      
+        <div class="prev-or-next">
+          <div class="post-foot-next">
+            
+              <a href="/2021/03/29/%E5%AE%9E%E7%8E%B0cuda%E6%8E%A8%E7%90%86yolov3-tiny%E6%A8%A1%E5%9E%8B/" target="_self">
+                <i class="iconfont icon-chevronleft"></i>
+                <span>上一页</span>
+              </a>
+            
+          </div>
+          <div class="post-attach">
+            <span class="post-pubtime">
+              <i class="iconfont icon-updatetime" title="更新时间"></i>
+              2021-03-29
+            </span>
+            
+                  <span class="post-categories">
+                    <i class="iconfont icon-bookmark" title="分类"></i>
+                    
+                    <span class="span--category">
+                      <a href="/categories/%E7%AE%97%E5%AD%90%E5%AE%9E%E7%8E%B0/" title="算子实现">
+                        <b>#</b> 算子实现
+                      </a>
+                    </span>
+                    
+                  </span>
+              
+                  <span class="post-tags">
+                    <i class="iconfont icon-tags" title="标签"></i>
+                    
+                    <span class="span--tag">
+                      <a href="/tags/%E7%AE%97%E5%AD%90%E5%AE%9E%E7%8E%B0/" title="算子实现">
+                        <b>#</b> 算子实现
+                      </a>
+                    </span>
+                    
+                  </span>
+              
+          </div>
+          <div class="post-foot-prev">
+            
+              <a href="/2021/04/07/%E6%A8%A1%E5%9E%8B%E5%89%AA%E6%9E%9D%E7%9A%84%E7%9B%B8%E5%85%B3%E5%86%85%E5%AE%B9/" target="_self">
+                <span>下一页</span>
+                <i class="iconfont icon-chevronright"></i>
+              </a>
+            
+          </div>
+        </div>
+      
+    </div>
+    
+
+    
+  </div>
+
+
+        <div class="footer">
+  <div class="social">
+    <ul>
+      
+        <li>
+          <a title="github" target="_blank" rel="noopener" href="https://github.com/laiou">
+            <i class="iconfont icon-github"></i>
+          </a>
+        </li>
+      
+        <li>
+          <a title="email" href="zs2281475@163.com">
+            <i class="iconfont icon-envelope"></i>
+          </a>
+        </li>
+      
+    </ul>
+  </div>
+  
+    <div class="footer-more">
+      <a target="_blank" rel="noopener" href="https://github.com/laiou">© 2019 — 2020  Laiuos</a>
+    </div>
+  
+    <div class="footer-more">
+      <a target="_blank" rel="noopener" href="https://creativecommons.org/licenses/by-nc-nd/4.0/">All content under CC BY-NC-ND 4.0</a>
+    </div>
+  
+</div>
+
+      </div>
+
+      <div class="back-to-top hidden">
+  <a href="javascript: void(0)">
+    <i class="iconfont icon-chevronup"></i>
+  </a>
+</div>
+
+
+<script src="/js/backtotop.js"></script>
+
+
+
+      
+
+
+    </div>
+  </body>
+</html>

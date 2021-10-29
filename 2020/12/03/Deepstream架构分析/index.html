@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+  <head>
+  <meta charset="utf-8">
+  <meta name="author" content="zchengsite, 1451426471@qq.com" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  
+  
+  <title>Deepstream架构分析 | Blog</title>
+
+  
+    <link rel="apple-touch-icon" href="/images/favicon.png">
+    <link rel="icon" href="/images/favicon.png">
+  
+
+  <!-- Raleway-Font -->
+  <link href="https://fonts.googleapis.com/css?family=Raleway&display=swap" rel="stylesheet">
+
+  <!-- hexo site css -->
+  
+<link rel="stylesheet" href="/css/base.css">
+<link rel="stylesheet" href="/iconfont/iconfont.css">
+<link rel="stylesheet" href="/css/github-markdown.css">
+<link rel="stylesheet" href="/css/highlight.css">
+
+
+  <!-- jquery3.3.1 -->
+  <script src="https://cdn.bootcss.com/jquery/3.3.1/jquery.min.js"></script>
+
+  <!-- fancybox -->
+  <link href="https://cdn.bootcss.com/fancybox/3.5.2/jquery.fancybox.min.css" rel="stylesheet">
+  <script async src="https://cdn.bootcss.com/fancybox/3.5.2/jquery.fancybox.min.js"></script>
+  
+<script src="/js/fancybox.js"></script>
+
+
+  
+
+<meta name="generator" content="Hexo 5.1.1"></head>
+
+
+  <body>
+    <div id="app">
+      <div class="header">
+  <div class="avatar">
+    <a href="/">
+      <!-- 头像取消懒加载，添加no-lazy -->
+      
+        <img src="/images/avatar.png" alt="">
+      
+    </a>
+    <div class="nickname"><a href="/">Laious</a></div>
+  </div>
+  <div class="navbar">
+    <ul>
+      
+        <li class="nav-item" data-path="/">
+          <a href="/">Home</a>
+        </li>
+      
+        <li class="nav-item" data-path="/archives/">
+          <a href="/archives/">Archives</a>
+        </li>
+      
+        <li class="nav-item" data-path="/categories/">
+          <a href="/categories/">Categories</a>
+        </li>
+      
+        <li class="nav-item" data-path="/tags/">
+          <a href="/tags/">Tags</a>
+        </li>
+      
+        <li class="nav-item" data-path="/about/">
+          <a href="/about/">About</a>
+        </li>
+      
+    </ul>
+  </div>
+</div>
+
+
+<script src="/js/activeNav.js"></script>
+
+
+
+      <div class="flex-container">
+        <!-- 文章详情页，展示文章具体内容，url形式：https://yoursite/文章标题/ -->
+<!-- 同时为「标签tag」，「朋友friend」，「分类categories」，「关于about」页面的承载页面，具体展示取决于page.type -->
+
+
+
+  
+
+  
+
+  
+
+  
+  <!-- 文章内容页 url形式：https://yoursite/文章标题/ -->
+  <div class="container post-details" id="post-details">
+    <div class="post-content">
+      <div class="post-title">Deepstream架构分析</div>
+      <div class="post-attach">
+        <span class="post-pubtime">
+          <i class="iconfont icon-updatetime" title="更新时间"></i>
+          2020-12-03
+        </span>
+        
+              <span class="post-categories">
+                <i class="iconfont icon-bookmark" title="分类"></i>
+                
+                <span class="span--category">
+                  <a href="/categories/%E4%BB%A3%E7%A0%81%E8%A7%A3%E6%9E%90/" title="代码解析">
+                    <b>#</b> 代码解析
+                  </a>
+                </span>
+                
+              </span>
+          
+              <span class="post-tags">
+                <i class="iconfont icon-tags" title="标签"></i>
+                
+                <span class="span--tag">
+                  <a href="/tags/deepstream/" title="deepstream">
+                    <b>#</b> deepstream
+                  </a>
+                </span>
+                
+              </span>
+          
+      </div>
+      <div class="markdown-body">
+        <hr>
+<p>&ensp;&ensp;主要是梳理deepseam-app的组织结构。<br>&ensp;&ensp;大概分析一下depstream的结构，以一个文件流处理系统的角度来看，deepstream-app的输入包括各种类型的数据源，carema直连，视频文件，IP carema等，还有一个就是在生成对应的pipeline的时候，需要读取deepstream-app的配置文件。<br>&ensp;&ensp;各种数据源会根据对应的gstreamer插件或者nv插件去进行对应的编解码等操作。这个先放到后面，先看一下配置文件的读取。<br>&ensp;&ensp;通过glib中的GkeyFile来实现配置文件的解析，关于GkeyFile读取配置的操作参考<a target="_blank" rel="noopener" href="https://developer.gnome.org/glib/stable/glib-Key-value-file-parser.html">GkeyFile的文档。</a></p>
+<p>&ensp;&ensp;在deepstream中读取配置文件并将其中的内容进行参数化是通过gboolean parse_config_file (NvDsConfig *config, gchar *cfg_file_path)函数来实现的，其中的两个参数NvDsConfig和cfg_file_path，cfg_file_path表示了deepstream-app配置文件的路径，NvDsConfig是一个结构体变量，用来保存从配置文件中读取的全部的信息，</p>
+<pre><code>typedef struct
+&#123;
+gboolean enable_perf_measurement;
+gint file_loop;
+gboolean source_list_enabled;
+guint total_num_sources;
+guint num_source_sub_bins;
+guint num_secondary_gie_sub_bins;
+guint num_sink_sub_bins;
+guint num_message_consumers;
+guint perf_measurement_interval_sec;
+gchar *bbox_dir_path;
+gchar *kitti_track_dir_path;
+
+gchar **uri_list;
+NvDsSourceConfig multi_source_config[MAX_SOURCE_BINS];
+NvDsStreammuxConfig streammux_config;
+NvDsOSDConfig osd_config;
+NvDsGieConfig primary_gie_config;
+NvDsTrackerConfig tracker_config;
+NvDsGieConfig secondary_gie_sub_bin_config[MAX_SECONDARY_GIE_BINS];
+NvDsSinkSubBinConfig sink_bin_sub_bin_config[MAX_SINK_BINS];
+NvDsMsgConsumerConfig message_consumer_config[MAX_MESSAGE_CONSUMERS];
+NvDsTiledDisplayConfig tiled_display_config;
+NvDsDsAnalyticsConfig dsanalytics_config;
+NvDsDsExampleConfig dsexample_config;
+NvDsSinkMsgConvBrokerConfig msg_conv_config;
+NvDsImageSave image_save_config;
+&#125; NvDsConfig;</code></pre>
+<p>&ensp;&ensp;从上面的 NvDsConfig的声明可以看出，deepstream-app中配置文件的全部group都能在这里看到，group指的是deepstream-app配置文件中[]里面的内容，Gkeyfile的格式。这里需要注意一下的是，除去上半部分的各种计数变量外，后半部分的用来存储各种配置文件的结构体，有的是变量，有的是结构体数组，从这里就能看到有些group在整个pipeline中只有一个，有些是能够有多个的。不同的group实际是代表的就是gstreamer中的各种组件，所以NvDsConfig里面存储的数据是从配置文件中读取的各种group的配置信息。这里顺便说一下另一个结构体AppCtx，和NvDsConfig类似，AppCtx存储的是这个deepsstream-app应用程序的配置信息。</p>
+<pre><code>struct _AppCtx
+&#123;
+gboolean version;
+gboolean cintr;
+gboolean show_bbox_text;
+gboolean seeking;
+gboolean quit;
+gint person_class_id;
+gint car_class_id;
+gint return_value;
+guint index;
+gint active_source_index;
+
+GMutex app_lock;
+GCond app_cond;
+
+NvDsPipeline pipeline;
+NvDsConfig config;
+NvDsConfig override_config;
+NvDsInstanceData instance_data[MAX_SOURCE_BINS];
+NvDsC2DContext *c2d_ctx[MAX_MESSAGE_CONSUMERS];
+NvDsAppPerfStructInt perf_struct;
+bbox_generated_callback bbox_generated_post_analytics_cb;
+bbox_generated_callback all_bbox_generated_cb;
+overlay_graphics_callback overlay_graphics_cb;
+NvDsFrameLatencyInfo *latency_info;
+GMutex latency_lock;
+GThread *ota_handler_thread;
+guint ota_inotify_fd;
+guint ota_watch_desc;
+&#125;;</code></pre>
+<p>&ensp;&ensp;从上面的声明可以看到主要包括了版本，互斥锁，pipeline等各种配置，回调函数等等应用进程的相关内容。<br>&ensp;&ensp;然后就是NvDsPipeline，用来存储一个pipeline的相关配置，就是上面NvDsConfig中的一些配置会赋值到这里面，用来创建对应的pipeline。</p>
+<pre><code>typedef struct
+&#123;
+gulong primary_bbox_buffer_probe_id;
+guint bus_id;
+GstElement *pipeline;
+NvDsSrcParentBin multi_src_bin;
+NvDsInstanceBin instance_bins[MAX_SOURCE_BINS];
+NvDsInstanceBin demux_instance_bins[MAX_SOURCE_BINS];
+NvDsInstanceBin common_elements;
+GstElement *tiler_tee;
+NvDsTiledDisplayBin tiled_display_bin;
+GstElement *demuxer;
+NvDsDsExampleBin dsexample_bin;
+AppCtx *appCtx;
+&#125; NvDsPipeline;</code></pre>
+<p>&ensp;&ensp;NvDsPipeline中除了deepstream-app配置文件中提供的配置组件以外，还包括了pipeline中需要用的其他的组件信息，比如用于pipeline和应用进程进行交互的bus组件，分支组件tee，分流器组件demuxer等等。这些组件都有对应的功能，后面会一一讲到。到了这里deepstream_app.h中的结构体声明只剩下最后一个NvDsInstanceBin了。</p>
+<pre><code>typedef struct
+&#123;
+guint index;
+gulong all_bbox_buffer_probe_id;
+gulong primary_bbox_buffer_probe_id;
+gulong fps_buffer_probe_id;
+GstElement *bin;
+GstElement *tee;
+GstElement *msg_conv;
+NvDsPrimaryGieBin primary_gie_bin;
+NvDsOSDBin osd_bin;
+NvDsSecondaryGieBin secondary_gie_bin;
+NvDsTrackerBin tracker_bin;
+NvDsSinkBin sink_bin;
+NvDsSinkBin demux_sink_bin;
+NvDsDsAnalyticsBin dsanalytics_bin;
+NvDsDsExampleBin dsexample_bin;
+AppCtx *appCtx;
+&#125; NvDsInstanceBin;</code></pre>
+<p>&ensp;&ensp;NvDsInstanceBin这里实际上是另一个嵌套了，如果上面的AppCtx,NvDsConfig,NvDsPipeline看成是依据deepstream-app的配置文件的参数化形成的嵌套的话，这里的NvDsInstanceBin就是为了创建Pipeline而形成的嵌套了，这里将整个pipeline根据功能或者说组件的类别划分成了一个个bins，最终的pipeline由这些bins连接起来构成。比如说一个sink bins不仅仅包括sink 组件，还包括了对应的编解码组件等等，这些组成了一个sink bins。<br>&ensp;&ensp;然后继续看NvDsConfig中的配置信息的流向，以NvDsSourceConfig multi_source_config[MAX_SOURCE_BINS]为例，具体声明在deepstream_sources.h。</p>
+<pre><code>typedef struct
+&#123;
+NvDsSourceType type;
+gboolean enable;
+gboolean loop;
+gboolean live_source;
+gboolean Intra_decode;
+guint smart_record;
+gint source_width;
+gint source_height;
+gint source_fps_n;
+gint source_fps_d;
+gint camera_csi_sensor_id;
+gint camera_v4l2_dev_node;
+gchar *uri;
+gchar *dir_path;
+gchar *file_prefix;
+gint latency;
+guint video_cache_size;
+guint smart_rec_container;
+guint smart_rec_def_duration;
+guint smart_rec_duration;
+guint smart_rec_start_time;
+guint smart_rec_interval;
+guint num_sources;
+guint gpu_id;
+guint camera_id;
+guint source_id;
+guint select_rtp_protocol;
+guint num_decode_surfaces;
+guint num_extra_surfaces;
+guint nvbuf_memory_type;
+guint cuda_memory_type;
+NvDsDewarperConfig dewarper_config;
+guint drop_frame_interval;
+gint rtsp_reconnect_interval_sec;
+&#125; NvDsSourceConfig;</code></pre>
+<p>&ensp;&ensp;从这里的参数不难看出，这个结构体存储的是某一个数据源的具体的配置信息，也就是对应于deepstream-app的配置文件的具体的比如说[source0]的各种配置。前面说过在构建pipeline的时候，会根据功能把pipeline分成一个个bins，但是NvDsInstanceBin中没有source相关的bins的参数。source组成bins的操作是在deepstream_sourcees.h里声明的，接着看这里面的其他的声明。</p>
+<pre><code>typedef struct
+&#123;
+GstElement *bin;
+GstElement *src_elem;
+GstElement *cap_filter;
+GstElement *cap_filter1;
+GstElement *depay;
+GstElement *parser;
+GstElement *enc_que;
+GstElement *dec_que;
+GstElement *decodebin;
+GstElement *enc_filter;
+GstElement *encbin_que;
+GstElement *tee;
+GstElement *tee_rtsp_pre_decode;
+GstElement *fakesink_queue;
+GstElement *fakesink;
+GstElement *nvvidconv;
+
+gboolean do_record;
+guint64 pre_event_rec;
+GMutex bin_lock;
+guint bin_id;
+gint rtsp_reconnect_interval_sec;
+struct timeval last_buffer_time;
+struct timeval last_reconnect_time;
+gulong src_buffer_probe;
+gulong rtspsrc_monitor_probe;
+gpointer bbox_meta;
+GstBuffer *inbuf;
+gchar *location;
+gchar *file;
+gchar *direction;
+gint latency;
+gboolean got_key_frame;
+gboolean eos_done;
+gboolean reset_done;
+gboolean live_source;
+gboolean reconfiguring;
+gboolean async_state_watch_running;
+NvDsDewarperBin dewarper_bin;
+gulong probe_id;
+guint64 accumulated_base;
+guint64 prev_accumulated_base;
+guint source_id;
+NvDsSourceConfig *config;
+gpointer recordCtx;
+&#125; NvDsSrcBin;</code></pre>
+<p>&ensp;&ensp;nvDsSrcBin就声明了一个source bins需要的各种组件，会根据具体的配置有针对性的生成，然后所有的source bins会在一次组合到一起成为一个更大的bins。这个通过NvDsSrcParentBin来完成嵌套。</p>
+<pre><code>typedef struct
+&#123;
+GstElement *bin;
+GstElement *streammux;
+GThread *reset_thread;
+NvDsSrcBin sub_bins[MAX_SOURCE_BINS];
+guint num_bins;
+guint num_fr_on;
+gboolean live_source;
+gulong nvstreammux_eosmonitor_probe;
+&#125; NvDsSrcParentBin;</code></pre>
+<p>&ensp;&ensp;NvDsSrcParentBin完成将全部的sources bins组合成一个更大的bins,对pipeline而言，这样的好处就是变得更加方便了，到了这里从pipeline的角度来看，不管deepstream-app的配置文件里面配置了多少种不同的数据源，多少个数量的数据源，对于pipeline而言都只有一个sources bins。然后就是对于pipeline中的sink而言，嵌套的原理跟这里的source是一样的，最终呈现给pipeline的也只有一个大的sink，具体根据sink组件的参数来配置，可以参考deepstream_sink.h中的声明去理解。与这里的逻辑是一样的。<br>&ensp;&ensp;到了这里，配置文件的读取，以及配置参数的存储以及相关联的嵌套关系就基本上讲完了，读取完配置文件里的配置参数，接下来就是创建pipeline了,在上面的过程中，已经涉及了一些跟pipeline创建有关的东西了，重复的就不再说了，再看一下NvDsPipeline的声明：</p>
+<pre><code>typedef struct
+&#123;
+gulong primary_bbox_buffer_probe_id;
+guint bus_id;
+GstElement *pipeline;
+NvDsSrcParentBin multi_src_bin;
+NvDsInstanceBin instance_bins[MAX_SOURCE_BINS];
+NvDsInstanceBin demux_instance_bins[MAX_SOURCE_BINS];
+NvDsInstanceBin common_elements;
+GstElement *tiler_tee;
+NvDsTiledDisplayBin tiled_display_bin;
+GstElement *demuxer;
+NvDsDsExampleBin dsexample_bin;
+AppCtx *appCtx;
+&#125; NvDsPipeline;</code></pre>
+<p>&ensp;&ensp;这里面除了上面已经讲过的bus，各种bins以外，剩下的主要就是tiler_tee和demuxer以及common_elements了，当然dsexample_bin也是跟上面的bins一样的嵌套逻辑，但是它有其他的功能，这个线往后面放，先看一下common_elements。</p>
+
+      </div>
+      
+        <div class="prev-or-next">
+          <div class="post-foot-next">
+            
+              <a href="/2020/12/03/Deepstream%E4%BB%A3%E7%A0%81%E8%B5%B0%E8%AF%BB/" target="_self">
+                <i class="iconfont icon-chevronleft"></i>
+                <span>上一页</span>
+              </a>
+            
+          </div>
+          <div class="post-attach">
+            <span class="post-pubtime">
+              <i class="iconfont icon-updatetime" title="更新时间"></i>
+              2020-12-03
+            </span>
+            
+                  <span class="post-categories">
+                    <i class="iconfont icon-bookmark" title="分类"></i>
+                    
+                    <span class="span--category">
+                      <a href="/categories/%E4%BB%A3%E7%A0%81%E8%A7%A3%E6%9E%90/" title="代码解析">
+                        <b>#</b> 代码解析
+                      </a>
+                    </span>
+                    
+                  </span>
+              
+                  <span class="post-tags">
+                    <i class="iconfont icon-tags" title="标签"></i>
+                    
+                    <span class="span--tag">
+                      <a href="/tags/deepstream/" title="deepstream">
+                        <b>#</b> deepstream
+                      </a>
+                    </span>
+                    
+                  </span>
+              
+          </div>
+          <div class="post-foot-prev">
+            
+              <a href="/2021/02/03/Darknet%E6%BA%90%E7%A0%81%E4%B8%AD%E8%AE%AD%E7%BB%83%E6%8E%A8%E7%90%86%E7%9A%84%E5%AE%9E%E7%8E%B0%E9%80%BB%E8%BE%91/" target="_self">
+                <span>下一页</span>
+                <i class="iconfont icon-chevronright"></i>
+              </a>
+            
+          </div>
+        </div>
+      
+    </div>
+    
+
+    
+  </div>
+
+
+        <div class="footer">
+  <div class="social">
+    <ul>
+      
+        <li>
+          <a title="github" target="_blank" rel="noopener" href="https://github.com/laiou">
+            <i class="iconfont icon-github"></i>
+          </a>
+        </li>
+      
+        <li>
+          <a title="email" href="zs2281475@163.com">
+            <i class="iconfont icon-envelope"></i>
+          </a>
+        </li>
+      
+    </ul>
+  </div>
+  
+    <div class="footer-more">
+      <a target="_blank" rel="noopener" href="https://github.com/laiou">© 2019 — 2020  Laiuos</a>
+    </div>
+  
+    <div class="footer-more">
+      <a target="_blank" rel="noopener" href="https://creativecommons.org/licenses/by-nc-nd/4.0/">All content under CC BY-NC-ND 4.0</a>
+    </div>
+  
+</div>
+
+      </div>
+
+      <div class="back-to-top hidden">
+  <a href="javascript: void(0)">
+    <i class="iconfont icon-chevronup"></i>
+  </a>
+</div>
+
+
+<script src="/js/backtotop.js"></script>
+
+
+
+      
+
+
+    </div>
+  </body>
+</html>

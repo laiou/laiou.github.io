@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+  <head>
+  <meta charset="utf-8">
+  <meta name="author" content="zchengsite, 1451426471@qq.com" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  
+  
+  <title>Deepstream代码解析 | Blog</title>
+
+  
+    <link rel="apple-touch-icon" href="/images/favicon.png">
+    <link rel="icon" href="/images/favicon.png">
+  
+
+  <!-- Raleway-Font -->
+  <link href="https://fonts.googleapis.com/css?family=Raleway&display=swap" rel="stylesheet">
+
+  <!-- hexo site css -->
+  
+<link rel="stylesheet" href="/css/base.css">
+<link rel="stylesheet" href="/iconfont/iconfont.css">
+<link rel="stylesheet" href="/css/github-markdown.css">
+<link rel="stylesheet" href="/css/highlight.css">
+
+
+  <!-- jquery3.3.1 -->
+  <script src="https://cdn.bootcss.com/jquery/3.3.1/jquery.min.js"></script>
+
+  <!-- fancybox -->
+  <link href="https://cdn.bootcss.com/fancybox/3.5.2/jquery.fancybox.min.css" rel="stylesheet">
+  <script async src="https://cdn.bootcss.com/fancybox/3.5.2/jquery.fancybox.min.js"></script>
+  
+<script src="/js/fancybox.js"></script>
+
+
+  
+
+<meta name="generator" content="Hexo 5.1.1"></head>
+
+
+  <body>
+    <div id="app">
+      <div class="header">
+  <div class="avatar">
+    <a href="/">
+      <!-- 头像取消懒加载，添加no-lazy -->
+      
+        <img src="/images/avatar.png" alt="">
+      
+    </a>
+    <div class="nickname"><a href="/">Laious</a></div>
+  </div>
+  <div class="navbar">
+    <ul>
+      
+        <li class="nav-item" data-path="/">
+          <a href="/">Home</a>
+        </li>
+      
+        <li class="nav-item" data-path="/archives/">
+          <a href="/archives/">Archives</a>
+        </li>
+      
+        <li class="nav-item" data-path="/categories/">
+          <a href="/categories/">Categories</a>
+        </li>
+      
+        <li class="nav-item" data-path="/tags/">
+          <a href="/tags/">Tags</a>
+        </li>
+      
+        <li class="nav-item" data-path="/about/">
+          <a href="/about/">About</a>
+        </li>
+      
+    </ul>
+  </div>
+</div>
+
+
+<script src="/js/activeNav.js"></script>
+
+
+
+      <div class="flex-container">
+        <!-- 文章详情页，展示文章具体内容，url形式：https://yoursite/文章标题/ -->
+<!-- 同时为「标签tag」，「朋友friend」，「分类categories」，「关于about」页面的承载页面，具体展示取决于page.type -->
+
+
+
+  
+
+  
+
+  
+
+  
+  <!-- 文章内容页 url形式：https://yoursite/文章标题/ -->
+  <div class="container post-details" id="post-details">
+    <div class="post-content">
+      <div class="post-title">Deepstream代码解析</div>
+      <div class="post-attach">
+        <span class="post-pubtime">
+          <i class="iconfont icon-updatetime" title="更新时间"></i>
+          2020-12-03
+        </span>
+        
+              <span class="post-categories">
+                <i class="iconfont icon-bookmark" title="分类"></i>
+                
+                <span class="span--category">
+                  <a href="/categories/%E4%BB%A3%E7%A0%81%E8%A7%A3%E6%9E%90/" title="代码解析">
+                    <b>#</b> 代码解析
+                  </a>
+                </span>
+                
+              </span>
+          
+              <span class="post-tags">
+                <i class="iconfont icon-tags" title="标签"></i>
+                
+                <span class="span--tag">
+                  <a href="/tags/deepstream/" title="deepstream">
+                    <b>#</b> deepstream
+                  </a>
+                </span>
+                
+              </span>
+          
+      </div>
+      <div class="markdown-body">
+        <hr>
+<p>&ensp;&ensp;Deepstream是基于Gstreamer的智能视频分析SDK，可以较为方便的利用Deepstream开发相关的视频结构化应用。这里主要看一下Deepstream的源码。以及如何在Deepstream中集成自定义的插件模块。<br>&ensp;&ensp;先看一下Deepstream的项目结构：<br>&ensp;&ensp;–Deepstream<br>&ensp;&ensp;&ensp;&ensp;|–bin  # 主要保存了各种编译好的exe，比如deepstream-app,deepstream-test-app等<br>&ensp;&ensp;&ensp;&ensp;|–libs # 保存了各种插件库，gstreamer插件。NVds插件，包括自定义插件编译完成之后也在这里面<br>&ensp;&ensp;&ensp;&ensp;|–samples # 官方提供的各种demo样例<br>&ensp;&ensp;&ensp;&ensp;|–sources  # deepstream-app的源码，也是这里主要关注的地方<br>&ensp;&ensp;&ensp;&ensp;&ensp;&ensp;|–apps #包含了deepstream-app的源码，其他的样例包括各种deepstream-test的源码也在这里<br>&ensp;&ensp;&ensp;&ensp;&ensp;&ensp;&ensp;&ensp;|–apps-common<br>&ensp;&ensp;&ensp;&ensp;&ensp;&ensp;&ensp;&ensp;&ensp;&ensp;|–includes #构建deepstream-app等pipeline的头文件<br>&ensp;&ensp;&ensp;&ensp;&ensp;&ensp;&ensp;&ensp;&ensp;&ensp;|–src #构建deepstream-app等pipeline的源码，主要是各种插件和相关pads等设计的代码<br>&ensp;&ensp;&ensp;&ensp;&ensp;&ensp;&ensp;&ensp;|–sample_apps #各种deestream-app，deepstream-test等主函数代码(不一一列举，只列出了deepstream-app)<br>&ensp;&ensp;&ensp;&ensp;&ensp;&ensp;&ensp;&ensp;&ensp;&ensp;|–deepstream-app #deepstream-app的主函数代码<br>&ensp;&ensp;&ensp;&ensp;&ensp;&ensp;|–gst-plugins #相关插件源码，包括预留的自定义插件开发样例<br>&ensp;&ensp;&ensp;&ensp;&ensp;&ensp;|–includes # 各种gst插件和nvds插件的头文件<br>&ensp;&ensp;&ensp;&ensp;&ensp;&ensp;|–libs # 包括nvinfer等插件<br>&ensp;&ensp;&ensp;&ensp;&ensp;&ensp;|–objectDetector_FasterRCNN<br>&ensp;&ensp;&ensp;&ensp;&ensp;&ensp;|–objectDetector_YOLO  #展示如何利用TensorRT提供相应的算法插件，并通过deepstream解析相关算法输出，和各种deepstream的配置文件<br>&ensp;&ensp;&ensp;&ensp;&ensp;&ensp;&ensp;&ensp;|–nvdsinfer_custom_impl_Yolo #展示如何利用TensorRT提供相应的算法插件，并通过deepstream解析相关算法输出的相关代码<br>&ensp;&ensp;&ensp;&ensp;&ensp;&ensp;|–objectDetector_SSD<br>&ensp;&ensp;&ensp;&ensp;&ensp;&ensp;|–tools #Deepstream相关的日志库</p>
+<hr>
+<p>&ensp;&ensp;这里主要是看一下源码，配置文件的相关内容可以直接看<a target="_blank" rel="noopener" href="https://docs.nvidia.com/metropolis/deepstream/dev-guide/text/DS_ref_app_deepstream.html#configuration-groups">官方文档。</a></p>
+<hr>
+<p>&ensp;&ensp;先从Deepstream/sources/apps/sample_apps/deepstream-app开始。<br>&ensp;&ensp;–deepstream-app<br>&ensp;&ensp;&ensp;&ensp;|–deepstream_app.c #相应函数的具体实现<br>&ensp;&ensp;&ensp;&ensp;|–deepstream_app.h #头文件，各种函数声明和结构体定义<br>&ensp;&ensp;&ensp;&ensp;|–deepstream_app_main.c #主函数，depstream-app项目入口<br>&ensp;&ensp;&ensp;&ensp;|–deepstream_app_config_parser.c # 解析配置文件的相关函数，读取配置文件的内容，加载到对应模块</p>
+<hr>
+<p>&ensp;&ensp;deepstream_app_main.c:主要完成了deepstream-app的总体流程的搭建<br>&ensp;&ensp;deepstream_app.c：主要包括了创建gstreamer的pipeline的代码<br>&ensp;&ensp;deepstream_app_config_parser.c：完成了从deepstream的配置文件中解析各种配置参数，并写入相应的结构中存储，以供创建具体的pipeline时使用。具体的细节参考<a target="_blank" rel="noopener" href="https://github.com/laiou/deepstream">deepstream代码走读。</a></p>
+
+      </div>
+      
+        <div class="prev-or-next">
+          <div class="post-foot-next">
+            
+              <a href="/2020/11/26/Gstreamer/" target="_self">
+                <i class="iconfont icon-chevronleft"></i>
+                <span>上一页</span>
+              </a>
+            
+          </div>
+          <div class="post-attach">
+            <span class="post-pubtime">
+              <i class="iconfont icon-updatetime" title="更新时间"></i>
+              2020-12-03
+            </span>
+            
+                  <span class="post-categories">
+                    <i class="iconfont icon-bookmark" title="分类"></i>
+                    
+                    <span class="span--category">
+                      <a href="/categories/%E4%BB%A3%E7%A0%81%E8%A7%A3%E6%9E%90/" title="代码解析">
+                        <b>#</b> 代码解析
+                      </a>
+                    </span>
+                    
+                  </span>
+              
+                  <span class="post-tags">
+                    <i class="iconfont icon-tags" title="标签"></i>
+                    
+                    <span class="span--tag">
+                      <a href="/tags/deepstream/" title="deepstream">
+                        <b>#</b> deepstream
+                      </a>
+                    </span>
+                    
+                  </span>
+              
+          </div>
+          <div class="post-foot-prev">
+            
+              <a href="/2020/12/03/Deepstream%E6%9E%B6%E6%9E%84%E5%88%86%E6%9E%90/" target="_self">
+                <span>下一页</span>
+                <i class="iconfont icon-chevronright"></i>
+              </a>
+            
+          </div>
+        </div>
+      
+    </div>
+    
+
+    
+  </div>
+
+
+        <div class="footer">
+  <div class="social">
+    <ul>
+      
+        <li>
+          <a title="github" target="_blank" rel="noopener" href="https://github.com/laiou">
+            <i class="iconfont icon-github"></i>
+          </a>
+        </li>
+      
+        <li>
+          <a title="email" href="zs2281475@163.com">
+            <i class="iconfont icon-envelope"></i>
+          </a>
+        </li>
+      
+    </ul>
+  </div>
+  
+    <div class="footer-more">
+      <a target="_blank" rel="noopener" href="https://github.com/laiou">© 2019 — 2020  Laiuos</a>
+    </div>
+  
+    <div class="footer-more">
+      <a target="_blank" rel="noopener" href="https://creativecommons.org/licenses/by-nc-nd/4.0/">All content under CC BY-NC-ND 4.0</a>
+    </div>
+  
+</div>
+
+      </div>
+
+      <div class="back-to-top hidden">
+  <a href="javascript: void(0)">
+    <i class="iconfont icon-chevronup"></i>
+  </a>
+</div>
+
+
+<script src="/js/backtotop.js"></script>
+
+
+
+      
+
+
+    </div>
+  </body>
+</html>
